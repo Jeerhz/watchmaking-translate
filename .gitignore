@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.ruff_cache/
+.pytest_cache/
+.DS_Store
+
+# crawled / derived data (rebuild with `uv run trad-gmt collect && uv run trad-gmt build`)
+data/raw/
+data/interim/
+data/processed/
