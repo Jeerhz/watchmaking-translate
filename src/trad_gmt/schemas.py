@@ -33,6 +33,7 @@ class TermEntry(BaseModel):
     definition_en: str | None = None
     definition_de: str | None = None
     parent_id: str | None = Field(default=None, description="Head entry id for sub-entries")
+    priority: int = Field(default=9, description="Glossary rank when sources disagree (1 = best)")
     url: str | None = None
 
     @computed_field
@@ -59,6 +60,7 @@ class ParallelSegment(BaseModel):
     )
     score_en: float | None = Field(default=None, description="fr↔en LaBSE cosine if computed")
     score_de: float | None = Field(default=None, description="fr↔de LaBSE cosine if computed")
+    tags: list[str] = Field(default=[], description="Free metadata, e.g. category:…, folder:…")
 
     @computed_field
     @property

@@ -10,7 +10,7 @@ from trad_gmt.build import build as build_dataset
 from trad_gmt.hub import DEFAULT_REPO, PushConfig
 from trad_gmt.hub import push as push_dataset
 from trad_gmt.io import SourceOutput
-from trad_gmt.sources import berner, brands, epo, fhh, patek, wikidata
+from trad_gmt.sources import berner, brands, epo, fhh, patek, rolex, wikidata, worldtempus
 
 app = typer.Typer(no_args_is_help=True, help="GMT watchmaking FR→EN/DE translation toolkit.")
 
@@ -21,6 +21,8 @@ COLLECTORS: dict[str, Callable[[], SourceOutput]] = {
     brands.NAME: brands.collect,
     patek.NAME: patek.collect,
     wikidata.NAME: wikidata.collect,
+    worldtempus.NAME: worldtempus.collect,
+    rolex.NAME: rolex.collect,
 }
 
 
@@ -30,7 +32,8 @@ def _setup(verbose: bool = False) -> None:
         level=logging.DEBUG if verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    logging.getLogger("httpx").setLevel(logging.WARNING)
+    for noisy in ("httpx", "httpx2", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 @app.command()

@@ -16,6 +16,9 @@ log = logging.getLogger(__name__)
 
 _DIGITS = re.compile(r"\d+")
 
+# FH Berner is the reference glossary; brand/foundation glossaries come next.
+TERM_PRIORITY: dict[str, int] = {"berner": 1, "patek": 2, "fhh": 3, "wikidata": 4}
+
 
 class BuildConfig(BaseModel):
     sources: list[str] | None = None
@@ -118,6 +121,10 @@ def build(cfg: BuildConfig) -> BuildReport:
     log.info("building from %s", names)
 
     terms = _dedupe_terms([t for o in outputs for t in o.terms])
+    terms = sorted(
+        (t.model_copy(update={"priority": TERM_PRIORITY.get(t.source, 9)}) for t in terms),
+        key=lambda t: (t.priority, t.id),
+    )
 
     dropped: Counter[str] = Counter()
     seen: set[str] = set()

@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 import httpx
@@ -33,6 +34,7 @@ class CachedFetcher(BaseModel):
     timeout_s: float = 30.0
     retries: int = 3
     headers: dict[str, str] = {}
+    transform: Callable[[str], str] | None = None  # applied before caching (e.g. keep text only)
 
     _sem: asyncio.Semaphore | None = PrivateAttr(default=None)
 
@@ -59,10 +61,11 @@ class CachedFetcher(BaseModel):
                     resp = await client.get(url)
                     await asyncio.sleep(self.delay_s)
                     if resp.status_code == 200:
+                        text = self.transform(resp.text) if self.transform else resp.text
                         path = self._cache_path(url)
                         path.parent.mkdir(parents=True, exist_ok=True)
-                        path.write_text(resp.text, encoding="utf-8")
-                        return FetchResult(url=url, status=200, text=resp.text)
+                        path.write_text(text, encoding="utf-8")
+                        return FetchResult(url=url, status=200, text=text)
                     if resp.status_code in (404, 410, 403):
                         return FetchResult(url=url, status=resp.status_code)
                     if resp.status_code == 429:  # rate limited: honour Retry-After

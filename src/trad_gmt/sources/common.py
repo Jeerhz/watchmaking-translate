@@ -11,6 +11,7 @@ def align_document(
     paragraphs: dict[str, list[str]],
     aligner: SentenceAligner,
     url: str | None = None,
+    tags: list[str] | None = None,
 ) -> list[ParallelSegment]:
     """Sentence-align one document given its paragraphs in fr + target languages.
 
@@ -52,6 +53,7 @@ def align_document(
                     score_de=link.scores.get("de") if "de" in link.targets else None,
                     fr=link.fr,
                     url=url,
+                    tags=tags or [],
                     **link.targets,
                 )
             )

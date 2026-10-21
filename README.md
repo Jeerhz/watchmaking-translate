@@ -33,6 +33,8 @@ interrupted crawls resume where they stopped.
 
 | source | languages | what | alignment |
 |---|---|---|---|
+| `worldtempus` — WorldTempus (GMT Publishing) | fr·en | ≈23k articles published in both editions — **GMT's own translations, the reference style** | Drupal node id; LaBSE sentence alignment; `tags` keep category / folder (e.g. *GMT Magazine*) / editor / date |
+| `rolex` — rolex.com via the Wayback Machine | fr·en·de | ≈3k editorial pages (World of Rolex, watchmaking, Rolex Family, Perpetual, magazine, collections) | same path under `/fr/`, `/`, `/de/`; LaBSE sentence alignment |
 | `berner` — FH Berner *Dictionnaire professionnel illustré de l'horlogerie* | fr·en·de | ~3.5k concepts, 5.5k terms incl. sub-entries, translated definitions + examples | concept id; sentences by count inside aligned blocks |
 | `fhh` — Fondation Haute Horlogerie | fr·en | encyclopedia (≈650 entries), watch novelties (≈2k editorial descriptions + spec sheets), library articles | search-index GUID; LaBSE sentence alignment |
 | `patek` — Patek Philippe glossary | fr·en | 315 entries with definitions | bijective LaBSE matching |
@@ -40,15 +42,14 @@ interrupted crawls resume where they stopped.
 | `brands` — Jaeger-LeCoultre, A. Lange & Söhne, Audemars Piguet | fr·en·de | news, savoir-faire, manufacture and product pages | same slug per locale; LaBSE sentence alignment |
 | `epo` — European patents, IPC G04 | fr·de·en | claims of ≈6.6k granted patents | claim number |
 
-Not collected (yet): bot-protected brand sites (Rolex, Vacheron Constantin, IWC,
-Cartier, Swatch Group brands), general web corpora (CCMatrix / ParaCrawl keyword
-mining), WorldTempus (competitor magazine).
+Not collected (yet): bot-protected brand sites (Vacheron Constantin, IWC, Cartier,
+Swatch Group brands), general web corpora (CCMatrix / ParaCrawl keyword mining).
 
 ## Dataset layout
 
 | config | content |
 |---|---|
-| `terms` | `fr`, `en`, `de`, part of speech, definitions, `source`, `parent_id` for sub-entries |
+| `terms` | `fr`, `en`, `de`, part of speech, definitions, `source`, `parent_id` for sub-entries, `priority` (1 = FH Berner, the reference glossary; 2 Patek; 3 FHH; 4 Wikidata) |
 | `segments` | multiparallel rows `fr`, `en`, `de` (targets may be null), `granularity`, `alignment`, `score_en`/`score_de` (LaBSE cosine for embedding-aligned rows) |
 | `fr-en`, `fr-de` | `src`/`tgt` pairs derived from `segments` |
 
@@ -72,6 +73,6 @@ src/trad_gmt/
 
 ## Licensing
 
-All the crawled texts remain the property of their owners (FH, FHH, brands, EPO, Wikidata
-CC0). The dataset is pushed **private** and is meant for internal research and model
+All the crawled texts remain the property of their owners (GMT Publishing for WorldTempus;
+FH, FHH, brands, EPO; Wikidata is CC0). The dataset is pushed **private** and is meant for internal research and model
 development only.
