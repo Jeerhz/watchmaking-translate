@@ -68,7 +68,11 @@ in watchmaking (haute horlogerie), built with the `trad-gmt` toolkit
 
 `segments` rows carry `granularity` (`sentence`, `paragraph`, `document`) and `alignment`
 (`native` = aligned unit in the source, `count` = sentence-aligned inside aligned blocks
-because all languages had the same number of sentences). Splits are made by document
+because all languages had the same number of sentences, `embedding` = LaBSE aligner, with
+`score_en` / `score_de` similarities). `tags` carry source metadata: for `worldtempus`
+(GMT Publishing's own site, the reference style) `type:maison-*` = editorial articles,
+`type:CP-*` = press releases, plus `category:`, `folder:` (e.g. `folder:GMT Magazine`),
+`brands:`, `editor:`, `date:`; for `rolex` the site `section:`. Splits are made by document
 (`doc_id`) so no entry leaks between train / validation / test.
 
 ## Sources
