@@ -1,8 +1,10 @@
 """Polite, disk-cached async HTTP fetching for the collectors."""
 
 import asyncio
+import gzip
 import hashlib
 import logging
+import zlib
 from collections.abc import Callable
 from pathlib import Path
 
@@ -74,10 +76,38 @@ class CachedFetcher(BaseModel):
                         await asyncio.sleep(wait)
                         continue
                     log.warning("HTTP %s on %s (attempt %d)", resp.status_code, url, attempt)
+                except httpx.DecodingError:
+                    # e.g. archived bodies whose stored gzip is double/badly encoded
+                    if (text := await self._fetch_raw(client, url)) is not None:
+                        if self.transform:
+                            text = self.transform(text)
+                        path = self._cache_path(url)
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.write_text(text, encoding="utf-8")
+                        return FetchResult(url=url, status=200, text=text)
+                    log.warning("undecodable body on %s", url)
+                    return FetchResult(url=url, status=0)
                 except httpx.HTTPError as exc:
                     log.warning("%s on %s (attempt %d)", type(exc).__name__, url, attempt)
                 await asyncio.sleep(2**attempt)
         return FetchResult(url=url, status=0)
+
+    async def _fetch_raw(self, client: httpx.AsyncClient, url: str) -> str | None:
+        """Download undecoded bytes and peel gzip/deflate layers by hand."""
+        try:
+            async with client.stream("GET", url) as resp:
+                raw = b"".join([chunk async for chunk in resp.aiter_raw()])
+        except httpx.HTTPError:
+            return None
+        for _ in range(3):
+            if raw[:2] == b"\x1f\x8b":
+                try:
+                    raw = gzip.decompress(raw)
+                except (OSError, EOFError):
+                    raw = zlib.decompressobj(16 + zlib.MAX_WBITS).decompress(raw)
+            else:
+                break
+        return raw.decode("utf-8", errors="replace")
 
     async def fetch_all(self, urls: list[str], desc: str = "fetch") -> dict[str, FetchResult]:
         self._sem = asyncio.Semaphore(self.concurrency)

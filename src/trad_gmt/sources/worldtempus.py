@@ -28,7 +28,7 @@ NAME = "worldtempus"
 HOSTS: dict[str, str] = {"fr": "https://fr.worldtempus.com", "en": "https://en.worldtempus.com"}
 SITEMAP_INDEX = "{host}/sitemap.xml"
 _NODE_ID = re.compile(r"-(\d+)\.html$")
-_BODY = ".field--name-field-paragraphs"
+_BODY = ".field--name-body, .field--name-field-paragraphs"
 
 
 class Article(BaseModel):
@@ -38,6 +38,8 @@ class Article(BaseModel):
     standfirst: str | None = None
     paragraphs: list[str] = []
     category: str | None = None
+    type: str | None = None
+    brands: str | None = None
     folder: str | None = None
     editor: str | None = None
     date: str | None = None
@@ -63,6 +65,8 @@ def parse_article(page_html: str) -> Article | None:
         standfirst=normalize(meta.attributes.get("content") or "") or None if meta else None,
         paragraphs=list(dict.fromkeys(paragraphs)),
         category=attrs.get("data-category-name"),
+        type=attrs.get("data-type"),
+        brands=attrs.get("data-brands-names"),
         folder=attrs.get("data-folder-name"),
         editor=attrs.get("data-editor"),
         date=attrs.get("data-date"),
@@ -84,7 +88,7 @@ def article_urls(fetcher: CachedFetcher, lang: str) -> dict[str, str]:
     return urls
 
 
-def collect(concurrency: int = 8, max_docs: int | None = None) -> SourceOutput:
+def collect(concurrency: int = 4, max_docs: int | None = None) -> SourceOutput:
     fetcher = CachedFetcher(
         cache_dir=RAW / NAME, concurrency=concurrency, delay_s=0.2, headers=BROWSER_HEADERS
     )
@@ -110,8 +114,10 @@ def collect(concurrency: int = 8, max_docs: int | None = None) -> SourceOutput:
         tags = [
             f"{k}:{v}"
             for k, v in (
+                ("type", fr.type),
                 ("category", fr.category),
                 ("folder", fr.folder),
+                ("brands", fr.brands),
                 ("editor", fr.editor),
                 ("date", fr.date),
             )
