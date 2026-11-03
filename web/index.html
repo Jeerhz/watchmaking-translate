@@ -1,0 +1,467 @@
+<title>GMT Translation Desk</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a two-pane desk — French copy and settings on the left, the publishable text and its evidence on the right; stacks on phones. */
+:root {
+  --bg: #f3f4f6;
+  --panel: #ffffff;
+  --ink: #161a22;
+  --muted: #5a6273;
+  --line: #d9dde5;
+  --steel: #2a4ea0;        /* blued steel — screws and hands */
+  --steel-soft: #e6ecf8;
+  --gold: #8a6420;         /* 18-carat gold for terminology */
+  --gold-soft: #f6eedd;
+  --ok: #2f7a4f;
+  --warn: #a34a28;
+  --font-text: "Newsreader", "Iowan Old Style", Georgia, serif;
+  --font-ui: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1218; --panel: #171b23; --ink: #e7e9ee; --muted: #9aa3b5; --line: #2a303c;
+    --steel: #8fb0ff; --steel-soft: #1d2740; --gold: #d8b36a; --gold-soft: #2e2617;
+    --ok: #6fc394; --warn: #f09a78; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1218; --panel: #171b23; --ink: #e7e9ee; --muted: #9aa3b5; --line: #2a303c;
+  --steel: #8fb0ff; --steel-soft: #1d2740; --gold: #d8b36a; --gold-soft: #2e2617;
+  --ok: #6fc394; --warn: #f09a78; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-ui); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 40px;
+}
+.wrap { max-width: 1280px; margin: 0 auto; display: grid; gap: 18px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 24px; }
+h1 { font-family: var(--font-text); font-weight: 600; font-size: 1.75rem; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+h1 span { color: var(--steel); }
+.sub { color: var(--muted); margin: 0; max-width: 70ch; }
+.status-line { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+.desk { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 18px; align-items: start; }
+@media (max-width: 880px) { .desk { grid-template-columns: minmax(0, 1fr); } }
+.pane { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 12px; min-width: 0; }
+.pane-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; }
+textarea {
+  width: 100%; min-height: 340px; resize: vertical; border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px;
+  font-family: var(--font-text); font-size: 17px; line-height: 1.55; color: var(--ink); background: var(--bg);
+}
+textarea:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--steel); outline-offset: 2px; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; background: transparent; color: var(--ink); padding: 7px 14px; font: 500 14px var(--font-ui); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--steel); color: var(--panel); }
+.check { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); font-size: 14px; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.btn { border: 1px solid var(--steel); background: var(--steel); color: var(--panel); padding: 9px 18px; border-radius: 8px; font: 600 14px var(--font-ui); cursor: pointer; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn.ghost { background: transparent; color: var(--steel); }
+.meta { color: var(--muted); font-size: 13px; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.tabs button { border: 0; background: none; padding: 8px 12px; font: 500 14px var(--font-ui); color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; }
+.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--steel); }
+.count { font-family: var(--font-mono); font-size: 12px; color: var(--muted); margin-left: 4px; }
+.output { font-family: var(--font-text); font-size: 18px; line-height: 1.6; min-height: 300px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.output.placeholder { color: var(--muted); font-style: italic; }
+.steps { display: flex; flex-wrap: wrap; gap: 6px; }
+.step { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.step.active { border-color: var(--steel); color: var(--steel); background: var(--steel-soft); }
+.step.done { border-color: var(--ok); color: var(--ok); }
+.list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.term { display: grid; gap: 4px; padding: 8px 10px; border-left: 3px solid var(--gold); background: var(--gold-soft); border-radius: 0 6px 6px 0; }
+.term .fr { font-family: var(--font-text); font-size: 16px; }
+.term .tg { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-family: var(--font-mono); font-size: 12px; padding: 1px 7px; border-radius: 4px; border: 1px solid var(--line); background: var(--panel); }
+.chip.first { border-color: var(--gold); color: var(--gold); font-weight: 500; }
+.def { font-size: 12px; color: var(--muted); }
+.ex { display: grid; gap: 3px; padding: 8px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+.ex .src { color: var(--muted); font-family: var(--font-text); font-size: 15px; }
+.ex .tgt { font-family: var(--font-text); font-size: 16px; }
+.tag { font-family: var(--font-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; }
+.tag.style { color: var(--steel); }
+.tag.domain { color: var(--muted); }
+.change { display: grid; gap: 4px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; }
+.change del { color: var(--warn); text-decoration-thickness: 1px; }
+.change ins { color: var(--ok); text-decoration: none; }
+.change .why { font-size: 12px; color: var(--muted); }
+details { border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+details pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.5 var(--font-mono); max-height: 420px; overflow: auto; margin: 8px 0 0; }
+.notice { padding: 10px 12px; border-radius: 8px; background: var(--steel-soft); color: var(--ink); font-size: 14px; }
+.notice.err { background: var(--gold-soft); }
+footer { color: var(--muted); font-size: 12px; max-width: 90ch; }
+@media (prefers-reduced-motion: no-preference) { .step.active { animation: pulse 1.6s ease-in-out infinite; } }
+@keyframes pulse { 50% { opacity: 0.55; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>GMT Translation <span>Desk</span></h1>
+      <p class="sub">French watchmaking copy into English or German, constrained by the FH Berner termbase and modelled on GMT Publishing’s own published translations, then checked by an editor pass.</p>
+    </div>
+    <div class="status-line" id="loadStatus">Loading glossary and translation memory…</div>
+  </header>
+
+  <div class="desk">
+    <section class="pane" aria-labelledby="srcLabel">
+      <div class="pane-head">
+        <span class="label" id="srcLabel">French source</span>
+        <button class="btn ghost" id="sampleBtn" type="button">Load example</button>
+      </div>
+      <textarea id="source" spellcheck="false" aria-label="French source text"></textarea>
+      <div class="controls">
+        <div class="seg" role="group" aria-label="Target language">
+          <button type="button" id="toEn" aria-pressed="true">English</button>
+          <button type="button" id="toDe" aria-pressed="false">Deutsch</button>
+        </div>
+        <label class="check"><input type="checkbox" id="review" checked> Editor review pass</label>
+        <label class="check" id="swissWrap" hidden><input type="checkbox" id="swiss"> Swiss spelling (ss)</label>
+      </div>
+      <div class="actions">
+        <button class="btn" id="goBtn" type="button" disabled>Translate</button>
+        <button class="btn ghost" id="stopBtn" type="button" hidden>Stop</button>
+        <span class="meta" id="evidenceMeta"></span>
+      </div>
+      <div class="notice" id="claudeNotice" hidden></div>
+    </section>
+
+    <section class="pane" aria-labelledby="outLabel">
+      <div class="pane-head">
+        <span class="label" id="outLabel">Translation</span>
+        <div class="actions">
+          <div class="steps" id="steps"></div>
+          <button class="btn ghost" id="copyBtn" type="button" disabled>Copy</button>
+        </div>
+      </div>
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tab-out" aria-selected="true" aria-controls="panel-out">Final text</button>
+        <button role="tab" id="tab-edits" aria-selected="false" aria-controls="panel-edits">Editor changes<span class="count" id="nEdits">0</span></button>
+        <button role="tab" id="tab-terms" aria-selected="false" aria-controls="panel-terms">Glossary<span class="count" id="nTerms">0</span></button>
+        <button role="tab" id="tab-ex" aria-selected="false" aria-controls="panel-ex">Examples<span class="count" id="nEx">0</span></button>
+        <button role="tab" id="tab-prompt" aria-selected="false" aria-controls="panel-prompt">Prompts</button>
+      </div>
+      <div role="tabpanel" id="panel-out"><div class="output placeholder" id="output">The translation appears here. Glossary terms and GMT examples for your text are already listed in the tabs above while you type.</div></div>
+      <div role="tabpanel" id="panel-edits" hidden><ul class="list" id="edits"></ul></div>
+      <div role="tabpanel" id="panel-terms" hidden><ul class="list" id="terms"></ul></div>
+      <div role="tabpanel" id="panel-ex" hidden><div id="examples"></div></div>
+      <div role="tabpanel" id="panel-prompt" hidden><div class="list" id="prompts"></div></div>
+    </section>
+  </div>
+
+  <footer>Terminology: FH Berner (reference), Patek Philippe, Fondation de la Haute Horlogerie, Wikidata. Examples: a sample of GMT Publishing’s WorldTempus editorial translations (“GMT”) and FH / brand texts (“industry”). Translation runs on your Claude account at the most capable tier. The production pipeline (<code>trad-gmt translate</code>) uses the full memory of ≈190,000 GMT sentences.</footer>
+</div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const SAMPLE = `La nouvelle référence se distingue par un boîtier de 39 mm en or gris 18 carats, dont la lunette lisse et les cornes facettées dialoguent avec un cadran guilloché bleu nuit. À 6 h, une petite seconde décentrée équilibre la composition, tandis que l’indication de la phase de lune occupe le haut du cadran.
+
+Animée par un calibre manufacture à remontage automatique, la montre bat à 28 800 alt/h (4 Hz) et offre une réserve de marche de 70 heures. Son spiral en silicium et son échappement à ancre suisse la rendent insensible aux champs magnétiques. Un fond saphir dévoile la masse oscillante en or rose, décorée de Côtes de Genève.
+
+Étanche à 50 m, elle est présentée sur un bracelet en alligator et sera produite en série limitée de 150 exemplaires, au prix de 38 500 francs suisses.`;
+
+// ---------- French normalisation (mirrors trad_gmt/mt/textnorm.py) ----------
+const foldCache = new Map();
+function foldChar(ch) {
+  let v = foldCache.get(ch);
+  if (v === undefined) { const base = ch.normalize("NFD")[0].toLowerCase(); v = base.length === 1 ? base : ch; foldCache.set(ch, v); }
+  return v;
+}
+function fold(text) { let out = ""; for (const ch of text.replace(/’/g, "'")) out += foldChar(ch); return out; }
+function stem(t) {
+  if (t.length > 4 && t.endsWith("aux")) return t.slice(0, -3) + "al";
+  if (t.length > 3 && (t.endsWith("s") || t.endsWith("x")) && !t.endsWith("ss")) return t.slice(0, -1);
+  return t;
+}
+const TOKEN = /[a-z0-9œæ]+/g;
+function tokenSpans(text) {
+  // fold() keeps one char per char only for BMP text; map offsets through code points
+  const chars = Array.from(text.replace(/’/g, "'"));
+  const folded = chars.map(foldChar);
+  const starts = []; let pos = 0;
+  for (const c of chars) { starts.push(pos); pos += c.length; }
+  starts.push(pos);
+  const joined = folded.join("");
+  // build index from folded string offset -> char index
+  const idx = []; let k = 0;
+  for (let i = 0; i < folded.length; i++) { for (let j = 0; j < folded[i].length; j++) idx[k++] = i; }
+  idx[k] = folded.length;
+  const out = [];
+  for (const m of joined.matchAll(TOKEN)) {
+    out.push([stem(m[0]), starts[idx[m.index]], starts[idx[m.index + m[0].length]]]);
+  }
+  return out;
+}
+let STOP = new Set();
+function contentTokens(text) {
+  const out = [];
+  for (const m of fold(text).matchAll(TOKEN)) { const t = m[0]; if (!STOP.has(t) && t.length > 1) out.push(stem(t)); }
+  return out;
+}
+function splitSentences(text) {
+  return text.split(/(?<=[.!?…][»"”’)]*)\s+(?=[«"“(\[]?\s?[A-ZÀ-ÖØ-ÞŒ0-9])/).map((s) => s.trim()).filter(Boolean);
+}
+function splitParagraphs(text) { return text.trim().split(/\n\s*\n|\n/).map((p) => p.trim()).filter(Boolean); }
+
+// ---------- glossary (mirrors glossary.py) ----------
+const LABEL = { gmt: "GMT usage", berner: "FH Berner", patek: "Patek Philippe", fhh: "FHH", wikidata: "Wikidata" };
+let GLOSS = new Map(); const LENGTHS = new Map();
+function findTerms(text, lang, limit = 120) {
+  const spans = tokenSpans(text); const toks = spans.map((s) => s[0]);
+  const hits = new Map(); let i = 0;
+  while (i < toks.length) {
+    let matched = 0;
+    const lens = [...(LENGTHS.get(toks[i]) || [])].sort((a, b) => b - a);
+    for (const n of lens) {
+      if (i + n > toks.length) continue;
+      const key = toks.slice(i, i + n).join(" ");
+      const e = GLOSS.get(key);
+      if (e && e[lang] && e[lang].length) {
+        if (hits.has(key)) hits.get(key).count++;
+        else hits.set(key, { surface: text.slice(spans[i][1], spans[i + n - 1][2]), entry: e, count: 1 });
+        matched = n; break;
+      }
+    }
+    i += matched || 1;
+  }
+  return [...hits.values()].sort((a, b) =>
+    (b.entry.key.length - a.entry.key.length) || (a.entry[lang][0][2] - b.entry[lang][0][2]) || (a.entry.fr < b.entry.fr ? -1 : a.entry.fr > b.entry.fr ? 1 : 0)
+  ).slice(0, limit);
+}
+
+// ---------- BM25 memory (mirrors memory.py) ----------
+class BM25 {
+  constructor(rows, k1 = 1.4, b = 0.75) {
+    this.rows = rows; const post = new Map(); const dl = new Float32Array(rows.length);
+    rows.forEach((r, d) => {
+      const tf = new Map(); for (const t of contentTokens(r[0])) tf.set(t, (tf.get(t) || 0) + 1);
+      let len = 0; for (const [t, c] of tf) { len += c; let p = post.get(t); if (!p) post.set(t, (p = [])); p.push(d, c); }
+      dl[d] = len;
+    });
+    const N = rows.length; const avg = dl.reduce((a, b2) => a + b2, 0) / Math.max(N, 1) || 1;
+    this.w = new Map();
+    for (const [t, p] of post) {
+      const df = p.length / 2; const idf = Math.log1p((N - df + 0.5) / (df + 0.5)); const arr = new Float32Array(p.length);
+      for (let j = 0; j < p.length; j += 2) { const d = p[j], tf = p[j + 1]; arr[j] = d; arr[j + 1] = (tf * (k1 + 1)) / (tf + k1 * (1 - b + (b * dl[d]) / avg)) * idf; }
+      this.w.set(t, arr);
+    }
+  }
+  search(query, k) {
+    const scores = new Map();
+    for (const t of new Set(contentTokens(query))) {
+      const arr = this.w.get(t); if (!arr) continue;
+      for (let j = 0; j < arr.length; j += 2) scores.set(arr[j], (scores.get(arr[j]) || 0) + arr[j + 1]);
+    }
+    return [...scores.entries()].sort((a, b) => b[1] - a[1]).slice(0, k);
+  }
+}
+let MEM = {}; let PER = {};
+function retrieve(sentences, lang, budget = 40) {
+  const seen = new Set(); let picked = [];
+  for (const q of sentences) {
+    for (const [pool, k] of Object.entries(PER[lang])) {
+      const idx = MEM[lang][pool]; let added = 0;
+      for (const [d, s] of idx.search(q, k * 3)) {
+        const r = idx.rows[d]; const key = r[0].toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key); picked.push({ fr: r[0], tgt: r[1], source: r[2], pool, score: s });
+        if (++added === k) break;
+      }
+    }
+  }
+  if (picked.length > budget) {
+    const style = picked.filter((e) => e.pool === "style").sort((a, b) => b.score - a.score).slice(0, Math.ceil(budget * 0.7));
+    const other = picked.filter((e) => e.pool !== "style").sort((a, b) => b.score - a.score).slice(0, budget - style.length);
+    const keep = new Set([...style, ...other]); picked = picked.filter((e) => keep.has(e));
+  }
+  return picked;
+}
+
+// ---------- prompts (templates come from the Python package via bundle.json) ----------
+let B = null;
+const NAMES = { en: "English", de: "German" };
+function fill(tpl, f) { return tpl.replace(/\{\{|\}\}|\{(\w+)\}/g, (m, k) => (m === "{{" ? "{" : m === "}}" ? "}" : f[k] ?? m)); }
+function renderGlossary(hits, lang) {
+  if (!hits.length) return "(no glossary term found)";
+  return hits.map((h) => {
+    const t = h.entry[lang]; const hom = t.length > 1 && new Set(t.map((x) => x[3])).size > 1;
+    return `- ${h.entry.fr} → ` + t.slice(0, 4).map((x) => `${x[0]} [${LABEL[x[1]] || x[1]}]` + (hom && x[3] ? ` — ${x[3]}` : "")).join(" | ");
+  }).join("\n");
+}
+function renderExamples(ex, lang) {
+  if (!ex.length) return "(no example)";
+  return ex.map((e) => `[${e.pool === "style" ? "GMT" : "industry"}]\nFR: ${e.fr}\n${lang.toUpperCase()}: ${e.tgt}`).join("\n\n");
+}
+function fieldsFor(source, lang, hits, ex, context) {
+  const style = B.style[lang] + (lang === "de" && $("swiss").checked ? B.swiss_de : "");
+  return { target: lang, target_name: NAMES[lang], style_guide: style, glossary: renderGlossary(hits, lang),
+           examples: renderExamples(ex, lang), context: context ? `\n<context>\n${context}\n</context>\n` : "", source };
+}
+function evidence(source, lang) {
+  const sentences = splitParagraphs(source).flatMap(splitSentences);
+  return { hits: findTerms(source, lang), ex: retrieve(sentences, lang) };
+}
+function chunks(paras, maxWords = 1200) {
+  const out = [[]]; let w = 0;
+  for (const p of paras) { const n = p.split(/\s+/).length; if (out[out.length - 1].length && w + n > maxWords) { out.push([]); w = 0; } out[out.length - 1].push(p); w += n; }
+  return out.filter((c) => c.length);
+}
+
+// ---------- UI ----------
+let lang = "en"; let sample = null; let ctl = null; let lastRun = null;
+function setLang(l) {
+  lang = l; $("toEn").setAttribute("aria-pressed", l === "en"); $("toDe").setAttribute("aria-pressed", l === "de");
+  $("swissWrap").hidden = l !== "de"; refreshEvidence();
+}
+function selectTab(id) {
+  for (const t of document.querySelectorAll('[role="tab"]')) { const on = t.id === id; t.setAttribute("aria-selected", on); $(t.getAttribute("aria-controls")).hidden = !on; }
+}
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+function showTerms(hits) {
+  const ul = $("terms"); ul.replaceChildren(); $("nTerms").textContent = hits.length;
+  if (!hits.length) { ul.append(el("li", "meta", "No termbase entry found in this text yet.")); return; }
+  for (const h of hits) {
+    const li = el("li", "term"); li.append(el("div", "fr", h.entry.fr + (h.count > 1 ? `  ×${h.count}` : "")));
+    const tg = el("div", "tg"); const t = h.entry[lang];
+    t.slice(0, 4).forEach((x, i) => tg.append(el("span", "chip" + (i === 0 ? " first" : ""), `${x[0]} · ${LABEL[x[1]] || x[1]}`)));
+    li.append(tg);
+    const defs = new Set(t.map((x) => x[3]).filter(Boolean));
+    if (t.length > 1 && defs.size > 1) t.slice(0, 4).forEach((x) => x[3] && li.append(el("div", "def", `${x[0]}: ${x[3]}`)));
+    ul.append(li);
+  }
+}
+function showExamples(ex) {
+  const box = $("examples"); box.replaceChildren(); $("nEx").textContent = ex.length;
+  if (!ex.length) { box.append(el("p", "meta", "Type or paste French text to see the closest published sentences.")); return; }
+  for (const e of ex) {
+    const d = el("div", "ex");
+    d.append(el("span", "tag " + e.pool, e.pool === "style" ? "GMT · WorldTempus" : "industry · " + e.source));
+    d.append(el("div", "src", e.fr), el("div", "tgt", e.tgt)); box.append(d);
+  }
+}
+function showEdits(changes) {
+  const ul = $("edits"); ul.replaceChildren(); $("nEdits").textContent = changes.length;
+  if (!changes.length) { ul.append(el("li", "meta", lastRun ? "The editor kept the draft as it was." : "Editor changes appear after a translation with the review pass.")); return; }
+  for (const c of changes) {
+    const li = el("li", "change"); const del = el("del", null, c.before || ""); const ins = el("ins", null, c.after || "");
+    const row = el("div"); row.append(del, document.createTextNode("  →  "), ins);
+    li.append(row, el("div", "why", c.reason || "")); ul.append(li);
+  }
+}
+let evTimer = null;
+function refreshEvidence() {
+  if (!B) return; clearTimeout(evTimer);
+  evTimer = setTimeout(() => {
+    const src = $("source").value; const { hits, ex } = evidence(src, lang);
+    showTerms(hits); showExamples(ex);
+    $("evidenceMeta").textContent = src.trim() ? `${hits.length} terms · ${ex.length} examples · ${src.trim().split(/\s+/).length} words` : "";
+  }, 250);
+}
+function setSteps(list, active) {
+  const box = $("steps"); box.replaceChildren();
+  list.forEach((s, i) => box.append(el("span", "step" + (i < active ? " done" : i === active ? " active" : ""), s)));
+}
+function errorText(e) {
+  const map = { not_granted: "Claude access was declined for this page. Allow it from the page’s permissions to translate.",
+    rate_limited: "Your Claude usage limit or the page’s rate limit was reached. Try again in a little while.",
+    refused: "Claude declined this text. Rephrase or shorten it and try again.",
+    prompt_too_large: "This text is too long for one request. Split it into shorter parts.",
+    invalid_json: "The editor pass returned an unreadable answer. Try again, or untick the review pass.",
+    session_expired: "Your Claude session expired. Sign in again and retry.",
+    sampling_disabled: "Claude is not available for this account here." };
+  return map[e && e.code] || "The request failed (" + ((e && e.code) || "error") + "). Try again.";
+}
+
+async function runTranslate() {
+  const text = $("source").value.trim(); if (!text || !sample) return;
+  ctl = new AbortController(); const signal = ctl.signal; const review = $("review").checked;
+  $("goBtn").disabled = true; $("stopBtn").hidden = false; $("copyBtn").disabled = true; $("claudeNotice").hidden = true;
+  const out = $("output"); out.classList.remove("placeholder"); out.textContent = "Thinking…"; selectTab("tab-out");
+  const parts = chunks(splitParagraphs(text)); const finals = []; const allChanges = []; let context = null;
+  const stepNames = review ? ["Terms & examples", "Draft", "Editor review"] : ["Terms & examples", "Draft"];
+  const promptBox = $("prompts"); promptBox.replaceChildren();
+  try {
+    for (let i = 0; i < parts.length; i++) {
+      const src = parts[i].join("\n\n"); const tag = parts.length > 1 ? ` (${i + 1}/${parts.length})` : "";
+      setSteps(stepNames.map((s) => s + tag), 0);
+      const { hits, ex } = evidence(src, lang); const f = fieldsFor(src, lang, hits, ex, context);
+      const draftPrompt = fill(B.prompts.translate_system, f) + "\n\n" + fill(B.prompts.translate_user, f);
+      addPrompt(promptBox, "Draft prompt" + tag, draftPrompt);
+      setSteps(stepNames.map((s) => s + tag), 1);
+      const prev = finals.join("\n\n");
+      const { text: draft } = await sample(draftPrompt, { modelTier: "complex", signal,
+        onText: ({ text: t }) => { out.textContent = (prev ? prev + "\n\n" : "") + t; } });
+      let final = draft.trim();
+      if (review) {
+        setSteps(stepNames.map((s) => s + tag), 2);
+        const reviewPrompt = fill(B.prompts.review_system, f) + "\n\n" + fill(B.prompts.review_user, { ...f, draft: final });
+        addPrompt(promptBox, "Review prompt" + tag, reviewPrompt);
+        const r = await sample.json(reviewPrompt, { modelTier: "complex", signal });
+        if (r && typeof r.translation === "string" && r.translation.trim()) final = r.translation.trim();
+        if (r && Array.isArray(r.changes)) allChanges.push(...r.changes);
+      }
+      finals.push(final); out.textContent = finals.join("\n\n");
+      context = splitParagraphs(final).slice(-2).join("\n\n");
+    }
+    lastRun = { text: finals.join("\n\n") }; setSteps(stepNames, stepNames.length);
+    showEdits(allChanges); $("copyBtn").disabled = false;
+  } catch (e) {
+    if (e && e.code !== "cancelled") { const n = $("claudeNotice"); n.textContent = errorText(e); n.className = "notice err"; n.hidden = false; }
+    out.textContent = (e && e.text) ? (finals.join("\n\n") + "\n\n" + e.text).trim() : (finals.join("\n\n") || "Stopped.");
+    setSteps([], -1);
+  } finally {
+    $("goBtn").disabled = false; $("stopBtn").hidden = true; ctl = null;
+  }
+}
+function addPrompt(box, title, text) {
+  const d = el("details"); d.append(el("summary", null, title + ` — ${text.length.toLocaleString()} characters`), el("pre", null, text)); box.append(d);
+}
+
+$("toEn").onclick = () => setLang("en"); $("toDe").onclick = () => setLang("de");
+$("swiss").onchange = refreshEvidence;
+for (const t of document.querySelectorAll('[role="tab"]')) t.onclick = () => selectTab(t.id);
+$("source").addEventListener("input", () => { refreshEvidence(); try { localStorage.setItem("gmt-draft", $("source").value); } catch {} });
+$("sampleBtn").onclick = () => { $("source").value = SAMPLE; refreshEvidence(); };
+$("goBtn").onclick = runTranslate; $("stopBtn").onclick = () => ctl && ctl.abort();
+$("copyBtn").onclick = async () => {
+  const t = $("output").textContent;
+  try { await navigator.clipboard.writeText(t); $("copyBtn").textContent = "Copied"; setTimeout(() => ($("copyBtn").textContent = "Copy"), 1500); }
+  catch { const r = document.createRange(); r.selectNodeContents($("output")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+};
+
+let saved = null; try { saved = localStorage.getItem("gmt-draft"); } catch {}
+$("source").value = saved && saved.trim() ? saved : SAMPLE;
+showEdits([]);
+
+(async () => {
+  try {
+    const res = await fetch("bundle.json"); B = await res.json();
+    STOP = new Set(B.stopwords); PER = B.per_sentence;
+    for (const e of B.glossary) {
+      GLOSS.set(e.key.join(" "), e);
+      if (!LENGTHS.has(e.key[0])) LENGTHS.set(e.key[0], new Set());
+      LENGTHS.get(e.key[0]).add(e.key.length);
+    }
+    for (const [l, pools] of Object.entries(B.memory)) { MEM[l] = {}; for (const [p, rows] of Object.entries(pools)) MEM[l][p] = new BM25(rows); }
+    const nMem = Object.values(B.memory).flatMap((p) => Object.values(p)).reduce((a, r) => a + r.length, 0);
+    $("loadStatus").textContent = `${B.glossary.length.toLocaleString()} terms · ${nMem.toLocaleString()} reference sentences`;
+    refreshEvidence();
+  } catch (e) {
+    $("loadStatus").textContent = "Could not load the termbase bundle."; console.error(e); return;
+  }
+  sample = window.claude ? await window.claude.use("sample") : null;
+  if (sample) { $("goBtn").disabled = false; }
+  else {
+    const n = $("claudeNotice"); n.hidden = false;
+    n.textContent = "Translation needs this page to be open in Claude (claude.ai or the Claude app). Glossary matches and GMT examples still work here.";
+  }
+})();
+</script>
