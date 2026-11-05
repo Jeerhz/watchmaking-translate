@@ -125,13 +125,34 @@ def evaluate(
     typer.echo(summary)
 
 
+@app.command("retrieval-eval")
+def retrieval_eval_cmd(
+    model: str = typer.Option("intfloat/multilingual-e5-small", help="Sentence embedder"),
+    n_queries: int = typer.Option(600, help="Held-out sentences per pool"),
+) -> None:
+    """Compare BM25, dense and hybrid example retrieval on held-out sentences (no API call)."""
+    from trad_gmt.mt.retrieval_eval import RetrievalEvalConfig, run
+
+    for report in run(RetrievalEvalConfig(model_name=model, n_queries=n_queries)):
+        typer.echo(f"\n{report['pool']} (memory {report['memory_size']:,}, k={report['k']})")
+        for row in report["results"]:
+            typer.echo(
+                f"  {row['method']:>11}: tgt_uni {row['tgt_uni']:.3f}  tgt_bi {row['tgt_bi']:.3f}"
+                f"  terms {row['terms']:.3f}  src_bi {row['src_bi']:.3f}"
+            )
+
+
 @app.command("export-web")
-def export_web_cmd() -> None:
-    """Write web/bundle.json (glossary, memory sample, prompts) for the browser demo."""
-    from trad_gmt.mt.export import export_web
+def export_web_cmd(
+    app_bundle: bool = typer.Option(
+        False, "--app", help="Write webapp/data/bundle.json.gz for the Vercel app instead"
+    ),
+) -> None:
+    """Write the glossary, memory sample and prompts for the browser demo or the Vercel app."""
+    from trad_gmt.mt.export import APP_EXPORT, export_web
     from trad_gmt.mt.resources import load_resources
 
-    typer.echo(export_web(load_resources()))
+    typer.echo(export_web(load_resources(), APP_EXPORT if app_bundle else None))
 
 
 @app.command("style-stats")

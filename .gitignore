@@ -12,3 +12,6 @@ data/processed/
 data/index/
 data/eval/
 web/bundle.json
+
+# Vercel CLI link
+.vercel/

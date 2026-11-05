@@ -20,6 +20,7 @@ French text ─┬─ glossary match ──────── GMT usage > FH Ber
              └─ style guide ───────────── measured on GMT's English (British spelling, “ ”,
                                           “at 6 o’clock”, calibre, 41 mm, …)
         → Claude Opus 5.5 draft  → editor pass (accuracy, terminology, style, fluency) → final
+        → QA checks (terms, figures, references, typography) → correction pass if flagged (web desk)
 ```
 
 - **Glossary** (`glossary.py`): accent-folded, plural-tolerant, longest-match lookup of
@@ -57,7 +58,30 @@ reports chrF for the draft and for the reviewed text, plus glossary-term adheren
   style-sensitive, glossary-constrained translation. The same code runs on Amazon Bedrock,
   Google Cloud Vertex AI or Microsoft Foundry by swapping the client class if GMT needs data
   residency there.
-- **Test interface**: `web/index.html` is published as a private claude.ai artifact. It
+- **Web desk** (`webapp/`, Next.js on Vercel, project `worldtempus/gmt-translation-desk`,
+  https://gmt-translation-desk.vercel.app, behind a shared access code): translates into
+  English and German in parallel and shows the whole chain — termbase hits highlighted in the
+  source, the reference sentences retrieved per sentence (with article links), the draft, the
+  editorial review with reasons, deterministic QA checks (`webapp/lib/qa.ts`: terms, figures,
+  references, paragraphs, leftover French, house typography), a correction pass that runs only
+  when QA flags something (`prompts.FIX_USER`: the editor fixes or overrules each flag), and
+  human validation with a downloadable job record. Pages `/architecture` and `/roadmap`
+  explain the system and the improvement plan. Glossary + BM25 run server-side from
+  `webapp/data/bundle.json.gz` (gitignored, client data):
+
+  ```bash
+  uv run trad-gmt export-web --app           # → webapp/data/bundle.json.gz (144k sentences)
+  cd webapp && npm install && npm run dev    # ANTHROPIC_API_KEY in env; ACCESS_CODE optional
+  npx vercel deploy --prod --scope worldtempus   # from the repo root (Root Directory = webapp;
+                                                 # .vercelignore uploads webapp/ only)
+  ```
+- **Retrieval benchmark**: `uv run trad-gmt retrieval-eval [--model sentence-transformers/LaBSE]`
+  compares BM25, dense, hybrid (RRF) and BM25→dense re-ranking on held-out sentences, without
+  any model call (target-side recall of the published translation, terminology-in-context).
+  BM25 wins on terminology in every pool (e.g. GMT English: 48.4% vs 45.0% hybrid / 34.5%
+  dense with LaBSE), so dense retrieval is not used. `node webapp/scripts/results.mjs`
+  refreshes the chart data of the architecture page.
+- **Claude.ai artifact demo**: `web/index.html` is published as a private claude.ai artifact. It
   mirrors the pipeline in the browser (same normalisation, glossary, BM25 and prompt
   templates, exported by `uv run trad-gmt export-web` into `web/bundle.json`, ≈36k sentences)
   and calls Claude on the viewer's own Claude account, so it needs no API key.

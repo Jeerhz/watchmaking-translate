@@ -53,9 +53,13 @@ def load_terms(cfg: ResourceConfig) -> pd.DataFrame:
     return df.astype(object).where(df.notna(), None)
 
 
-def load_segments(cfg: ResourceConfig, split: str = "train") -> pd.DataFrame:
+def load_segments(
+    cfg: ResourceConfig, split: str = "train", extra: tuple[str, ...] = ()
+) -> pd.DataFrame:
     cols = ["id", "source", "doc_id", "fr", "en", "de", "score_en", "score_de", "tags"]
-    return pd.read_parquet(ensure_data(cfg) / "segments" / f"{split}.parquet", columns=cols)
+    return pd.read_parquet(
+        ensure_data(cfg) / "segments" / f"{split}.parquet", columns=cols + list(extra)
+    )
 
 
 def is_house_style(tags: list[str]) -> bool:

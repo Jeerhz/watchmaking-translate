@@ -1,0 +1,10 @@
+node_modules/
+.next/
+.vercel/
+next-env.d.ts
+*.tsbuildinfo
+.env*.local
+# GMT / FH / brand texts — rebuild with `uv run trad-gmt export-web --app`, never commit
+data/
+.vercel
+.env*

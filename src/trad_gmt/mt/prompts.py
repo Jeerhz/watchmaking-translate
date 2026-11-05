@@ -117,6 +117,59 @@ REVIEW_SCHEMA: dict = {
     "additionalProperties": False,
 }
 
+# Third pass, run only when the automatic QA checks (terminology, figures, references,
+# typography, untranslated French) flag the reviewed text. The editor decides per flag
+# whether it is a real error: the checks are string heuristics and can raise false alarms.
+FIX_USER = """\
+<glossary>
+{glossary}
+</glossary>
+{context}
+<source lang="fr">
+{source}
+</source>
+
+<translation lang="{target}">
+{draft}
+</translation>
+
+<qa_flags>
+{issues}
+</qa_flags>
+
+Automatic checks flagged the points in <qa_flags> in this reviewed translation. For each \
+flag, decide whether it is a real error. Correct real errors with the smallest change; keep \
+the text when a flag is a false alarm (a legitimate inflection, compound or synonym, an \
+intentional recasting, a figure written out in words). Change nothing that was not flagged.
+
+Return JSON: {{"translation": "<the corrected {target_name} text>", "changes": [{{"before": \
+"<old wording>", "after": "<new wording>", "reason": "<short explanation>"}}], "verdicts": \
+[{{"check": "<the flag, verbatim>", "action": "fixed|kept", "reason": "<why>"}}]}}.\
+"""
+
+FIX_SCHEMA: dict = {
+    "type": "object",
+    "properties": {
+        "translation": {"type": "string"},
+        "changes": REVIEW_SCHEMA["properties"]["changes"],
+        "verdicts": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "check": {"type": "string"},
+                    "action": {"type": "string", "enum": ["fixed", "kept"]},
+                    "reason": {"type": "string"},
+                },
+                "required": ["check", "action", "reason"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    "required": ["translation", "changes", "verdicts"],
+    "additionalProperties": False,
+}
+
 POOL_LABEL: dict[str, str] = {"style": "GMT", "domain": "industry"}
 
 

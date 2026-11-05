@@ -1,0 +1,7 @@
+# Vercel builds only webapp/ (Project Settings → Root Directory = webapp): upload nothing else
+/*
+!/webapp
+/webapp/node_modules
+/webapp/.next
+/webapp/.vercel
+/webapp/.env*
