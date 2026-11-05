@@ -147,12 +147,22 @@ def export_web_cmd(
     app_bundle: bool = typer.Option(
         False, "--app", help="Write webapp/data/bundle.json.gz for the Vercel app instead"
     ),
+    push_bundle: bool = typer.Option(
+        False, "--push", help="With --app: upload the bundle to the private Hub dataset"
+    ),
 ) -> None:
     """Write the glossary, memory sample and prompts for the browser demo or the Vercel app."""
     from trad_gmt.mt.export import APP_EXPORT, export_web
     from trad_gmt.mt.resources import load_resources
 
-    typer.echo(export_web(load_resources(), APP_EXPORT if app_bundle else None))
+    out = export_web(load_resources(), APP_EXPORT if app_bundle else None)
+    typer.echo(out)
+    if push_bundle:
+        if not app_bundle:
+            raise typer.BadParameter("--push needs --app")
+        from trad_gmt.hub import push_web_bundle
+
+        typer.echo(push_web_bundle(out))
 
 
 @app.command("style-stats")

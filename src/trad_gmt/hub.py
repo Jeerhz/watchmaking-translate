@@ -109,3 +109,18 @@ def push(cfg: PushConfig) -> str:
         delete_patterns=["*.parquet"],
     )
     return f"https://huggingface.co/datasets/{cfg.repo_id}"
+
+
+WEB_BUNDLE_PATH = "webapp/bundle.json.gz"
+
+
+def push_web_bundle(bundle: Path, repo_id: str = DEFAULT_REPO) -> str:
+    """Upload the web-desk bundle next to the dataset; Vercel builds download it with HF_TOKEN."""
+    HfApi().upload_file(
+        path_or_fileobj=str(bundle),
+        path_in_repo=WEB_BUNDLE_PATH,
+        repo_id=repo_id,
+        repo_type="dataset",
+        commit_message="Update web desk bundle",
+    )
+    return f"https://huggingface.co/datasets/{repo_id}/blob/main/{WEB_BUNDLE_PATH}"

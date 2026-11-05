@@ -70,11 +70,18 @@ reports chrF for the draft and for the reviewed text, plus glossary-term adheren
   `webapp/data/bundle.json.gz` (gitignored, client data):
 
   ```bash
-  uv run trad-gmt export-web --app           # → webapp/data/bundle.json.gz (144k sentences)
+  uv run trad-gmt export-web --app --push    # → webapp/data/bundle.json.gz (144k sentences),
+                                             #   also uploaded to the private Hub dataset
   cd webapp && npm install && npm run dev    # ANTHROPIC_API_KEY in env; ACCESS_CODE optional
   npx vercel deploy --prod --scope worldtempus   # from the repo root (Root Directory = webapp;
                                                  # .vercelignore uploads webapp/ only)
   ```
+
+  Pushes to GitHub also deploy. Those builds have no bundle (it is gitignored), so
+  `webapp/scripts/fetch-bundle.mjs` downloads `webapp/bundle.json.gz` from the private dataset
+  before `next build`, using the Vercel secret `HF_TOKEN` (read-only token). Without the
+  token, or if the download fails, the build fails and the current production stays live.
+  After rebuilding the bundle, run `--push` so Git deploys pick it up.
 - **Retrieval benchmark**: `uv run trad-gmt retrieval-eval [--model sentence-transformers/LaBSE]`
   compares BM25, dense, hybrid (RRF) and BM25→dense re-ranking on held-out sentences, without
   any model call (target-side recall of the published translation, terminology-in-context).
