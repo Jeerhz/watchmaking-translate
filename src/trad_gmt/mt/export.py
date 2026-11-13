@@ -24,7 +24,7 @@ from trad_gmt.mt.resources import (
     load_segments,
     select_pool,
 )
-from trad_gmt.mt.style import HOUSE_TERMS, SWISS_DE, style_guide
+from trad_gmt.mt.style import GERMANY_DE, HOUSE_TERMS, STYLE_DE, SWISS_DE, style_guide
 from trad_gmt.mt.textnorm import FR_STOPWORDS
 
 log = logging.getLogger(__name__)
@@ -49,7 +49,12 @@ SOURCE_NAMES: dict[str, str] = {
 class ExportConfig(BaseModel):
     out: Path = WEB_DIR / "bundle.json"
     # sentences per pool (BM25 runs client-side for the artifact demo)
-    sizes: dict[str, int] = {"en/style": 16_000, "en/domain": 6_000, "de/domain": 14_000}
+    sizes: dict[str, int] = {
+        "en/style": 16_000,
+        "en/domain": 6_000,
+        "de/style": 5_000,
+        "de/domain": 14_000,
+    }
     min_score: float = 0.85
     max_chars: int = 350
     provenance: bool = False
@@ -58,7 +63,7 @@ class ExportConfig(BaseModel):
 
 APP_EXPORT = ExportConfig(
     out=APP_DATA / "bundle.json.gz",
-    sizes={"en/style": 90_000, "en/domain": 30_000, "de/domain": 30_000},
+    sizes={"en/style": 90_000, "en/domain": 30_000, "de/style": 5_000, "de/domain": 30_000},
     max_chars=420,
     provenance=True,
 )
@@ -139,8 +144,9 @@ def export_web(res: Resources, cfg: ExportConfig | None = None) -> Path:
             "fix_user": prompts.FIX_USER,
         },
         "schemas": {"review": prompts.REVIEW_SCHEMA, "fix": prompts.FIX_SCHEMA},
-        "style": {lang: style_guide(lang) for lang in TARGETS},
+        "style": {"en": style_guide("en"), "de": STYLE_DE},
         "swiss_de": SWISS_DE,
+        "germany_de": GERMANY_DE,
         "per_sentence": PER_SENTENCE,
         "stopwords": sorted(FR_STOPWORDS),
         "house_terms": list(HOUSE_TERMS),

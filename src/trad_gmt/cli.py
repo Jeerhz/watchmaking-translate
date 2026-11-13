@@ -12,7 +12,17 @@ from trad_gmt.build import build as build_dataset
 from trad_gmt.hub import DEFAULT_REPO, PushConfig
 from trad_gmt.hub import push as push_dataset
 from trad_gmt.io import SourceOutput
-from trad_gmt.sources import berner, brands, epo, fhh, patek, rolex, wikidata, worldtempus
+from trad_gmt.sources import (
+    berner,
+    brands,
+    epo,
+    fhh,
+    gmt_magazine,
+    patek,
+    rolex,
+    wikidata,
+    worldtempus,
+)
 
 app = typer.Typer(no_args_is_help=True, help="GMT watchmaking FR→EN/DE translation toolkit.")
 
@@ -25,6 +35,7 @@ COLLECTORS: dict[str, Callable[[], SourceOutput]] = {
     wikidata.NAME: wikidata.collect,
     worldtempus.NAME: worldtempus.collect,
     rolex.NAME: rolex.collect,
+    gmt_magazine.NAME: gmt_magazine.collect,
 }
 
 
@@ -91,7 +102,7 @@ def translate(
     effort: str = typer.Option("xhigh", help="Claude effort: low|medium|high|xhigh|max"),
     model: str = typer.Option("claude-opus-5-5", help="Claude model id"),
     review: bool = typer.Option(True, help="Run the editor review pass"),
-    swiss: bool = typer.Option(False, help="German: Swiss orthography (ss, no ß)"),
+    swiss: bool = typer.Option(True, help="German: Swiss orthography as GMT prints it (ss, «»); --no-swiss for Germany"),
     details: Path = typer.Option(None, help="Write glossary/examples/changes JSON here"),
 ) -> None:
     """Translate French watchmaking copy into English or German in GMT house style."""

@@ -3,10 +3,9 @@
 The English rules were measured on GMT's own translations (WorldTempus editorial
 segments, ``type:maison-*`` / *GMT Magazine*, ≈190k sentences in the train split); the
 counts in brackets are occurrences in that corpus, so the guide can be re-checked when
-the data changes (``uv run trad-gmt style-stats``). There is no German GMT material in
-the dataset yet (the magazine PDFs will bring it), so the German rules follow the
-FH Berner dictionary and the German editions of the brand sites, which are the closest
-published register.
+the data changes (``uv run trad-gmt style-stats``). The German rules were measured on GMT
+Magazine's German edition (issues 89–98, ≈4.5k sentences aligned to the French): GMT
+writes Swiss German (0 ß, 310 "ss" words), «…» quotes (526 vs 0 „…“) and "28 800".
 """
 
 from collections.abc import Iterable
@@ -53,7 +52,7 @@ Watchmaking conventions observed in GMT's translations
 """
 
 STYLE_DE = """\
-Hausstil — GMT Publishing Deutsch (Uhrenmagazin)
+Hausstil — GMT Magazine Deutsch (Uhrenmagazin)
 
 Stimme
 - Gewandtes, sachkundiges Magazindeutsch für Uhrenliebhaber und Sammler. Natürlich formulieren
@@ -63,34 +62,46 @@ Stimme
   knapp und als Liste ("Werk: Automatikkaliber …; Gehäuse: 41 mm, Titan").
 - Leserinnen und Leser werden, falls nötig, mit "Sie" angesprochen.
 
-Rechtschreibung und Typografie
-- Standardhochdeutsch mit ß (außer der Auftrag verlangt Schweizer Rechtschreibung mit "ss").
-- Deutsche Anführungszeichen „…“ (innen ‚…‘); französische « » werden zu „ “.
-- Gedankenstrich mit Leerzeichen " – ".
-- Zahlen: Dezimalkomma (1,63 Karat); Tausender mit Punkt (28.800). Preise "CHF 16’800".
-- Maße mit Leerzeichen: "41 mm"; als Kompositum mit Bindestrichen: "das 41-mm-Gehäuse".
+Typografie
+- Gedankenstrich mit Leerzeichen " – ". Dezimalkomma (1,63 Karat).
+- Masse mit Leerzeichen: "41 mm"; als Kompositum mit Bindestrichen: "das 41-mm-Gehäuse".
 
-Uhrmacherische Konventionen (Berner-Wörterbuch, deutschsprachige Markenseiten)
-- "à 6 h" → "bei 6 Uhr"; "28 800 alt/h (4 Hz)" → "28.800 Halbschwingungen pro Stunde (4 Hz)".
-- "étanche à 100 m" → "wasserdicht bis 100 m"; "or rose 18 carats" → "18 Karat Roségold"
-  bzw. "aus 18-karätigem Roségold".
-- Bevorzugt: Uhrwerk / Kaliber, Automatikwerk (Selbstaufzug), Gangreserve, Unruh,
-  Spiralfeder, Ankerhemmung, Schwungmasse (Rotor), Mondphase, ewiger Kalender,
-  Minutenrepetition, Saphirglas, Gehäuseboden (Saphirglasboden), Zifferblatt, Indizes,
-  Lünette, Manufakturkaliber, limitierte Auflage von 50 Exemplaren.
-- "la Manufacture" → "die Manufaktur"; "la Maison" im institutionellen Sinn → "die Maison".
+Uhrmacherische Konventionen (wie GMT Magazine sie schreibt)
+- "mouvement" → meist "Werk" (222) oder "Kaliber", seltener "Uhrwerk"; "boîtier" → "Gehäuse";
+  "acier" → "Stahl" (82, nicht "Edelstahl"); "garde-temps" → "Zeitmesser" oder "Uhr".
+- "la Maison" → "die Marke" (158) oder "das Haus" (48), nicht "die Maison";
+  "la Manufacture" → "die Manufaktur".
+- "cornes" → "Hörner"; "or gris/blanc" → "Weissgold"; "or rose" → "Roségold";
+  "Côtes de Genève" → "Genfer Streifen"; "masse oscillante" → "Schwungmasse";
+  "réserve de marche" → "Gangreserve"; "quantième perpétuel" → "ewiger Kalender";
+  "remontage automatique" → "Automatikaufzug"; "petite seconde" → "kleine Sekunde".
+- "série limitée à 50 exemplaires" → "auf 50 Exemplare limitiert" / "limitierte Auflage von
+  50 Exemplaren"; "à 6 h" → "bei 6 Uhr"; "étanche à 100 m" → "wasserdicht bis 100 m".
 - Marken-, Kollektions-, Modell-, Kaliber- und Materialnamen exakt wie in der Vorlage
   belassen (Royal Oak Perpétuelle, Calibre 5134, Parachrom), inklusive ™/®.
 """
 
-SWISS_DE = "\n- Auftrag: Schweizer Rechtschreibung — kein ß, sondern ss (gross, schliesslich)."
+# GMT's own German (default); the Germany variant is for clients who ask for it.
+SWISS_DE = """
+Rechtschreibung (GMT-Hausstil: Schweizer Deutsch)
+- Kein ß, immer ss (gross, schliesslich, Weissgold, ausserdem).
+- Anführungszeichen «…» (innen ‹…›).
+- Tausender mit Leerzeichen: 28 800 Halbschwingungen pro Stunde; Preise "CHF 16 800".
+"""
+
+GERMANY_DE = """
+Rechtschreibung (Auftrag: Deutschland)
+- Standardhochdeutsch mit ß (groß, schließlich, Weißgold).
+- Deutsche Anführungszeichen „…“ (innen ‚…‘).
+- Tausender mit Punkt: 28.800 Halbschwingungen pro Stunde; Preise "16.800 CHF".
+"""
 
 
-def style_guide(lang: str, swiss_german: bool = False) -> str:
+def style_guide(lang: str, swiss_german: bool = True) -> str:
     if lang == "en":
         return STYLE_EN
     if lang == "de":
-        return STYLE_DE + (SWISS_DE if swiss_german else "")
+        return STYLE_DE + (SWISS_DE if swiss_german else GERMANY_DE)
     raise ValueError(f"unsupported target language {lang!r}")
 
 
@@ -124,24 +135,25 @@ def style_stats(sentences: Iterable[str]) -> dict[str, int]:
 
 
 # House usage that overrides the termbase where GMT's published texts consistently differ
-# from it. Counts: occurrences in GMT's English editorial translations (train split) and,
-# for German, in the German brand pages (no GMT German yet). Ranked above FH Berner.
+# from it. Counts: occurrences in GMT's English editorial translations (train split) and in
+# GMT Magazine's German edition (FR↔DE aligned pairs whose French has the term).
+# German is Swiss (ss), as GMT prints it. Ranked above FH Berner.
 HOUSE_TERMS: tuple[dict[str, str], ...] = (
-    # "lugs" 854 vs "horns" 125 (Berner: horn); Bandanstöße 61 vs Hörner 2
-    {"fr": "cornes", "en": "lugs", "de": "Bandanstöße"},
-    {"fr": "corne", "en": "lug", "de": "Bandanstoß"},
-    # "white gold" 1,637 vs "grey gold" 17; Weißgold 720
-    {"fr": "or gris", "en": "white gold", "de": "Weißgold"},
-    {"fr": "or blanc", "en": "white gold", "de": "Weißgold"},
-    # "rose gold" 1,509 vs "pink gold" 1,013; Roségold 508 vs Rotgold 140
+    # "lugs" 854 vs "horns" 125 (Berner: horn); Hörner 16 vs Bandanstösse 2
+    {"fr": "cornes", "en": "lugs", "de": "Hörner"},
+    {"fr": "corne", "en": "lug", "de": "Horn"},
+    # "white gold" 1,637 vs "grey gold" 17; Weissgold 28 vs Graugold 6
+    {"fr": "or gris", "en": "white gold", "de": "Weissgold"},
+    {"fr": "or blanc", "en": "white gold", "de": "Weissgold"},
+    # "rose gold" 1,509 vs "pink gold" 1,013; Roségold 46 of 49
     {"fr": "or rose", "en": "rose gold", "de": "Roségold"},
-    # "Côtes de Genève" 324 vs "Geneva stripes" 33; Genfer Streifen 16 vs Côtes de Genève 12
+    # "Côtes de Genève" 324 vs "Geneva stripes" 33; Genfer Streifen 6 of 6
     {"fr": "Côtes de Genève", "en": "Côtes de Genève", "de": "Genfer Streifen"},
-    # "small seconds" 870; kleine Sekunde 36
+    # "small seconds" 870; kleine Sekunde 21 of 21
     {"fr": "petite seconde", "en": "small seconds", "de": "kleine Sekunde"},
-    # "self-winding" 1,511 vs "automatic winding" 278; Automatikaufzug 72 vs Selbstaufzug 29
+    # "self-winding" 1,511 vs "automatic winding" 278; Automatikaufzug 19 vs Selbstaufzug 0
     {"fr": "remontage automatique", "en": "self-winding", "de": "Automatikaufzug"},
-    # "limited edition" 1,733 vs "limited series" 537; limitierte Auflage 17
+    # "limited edition" 1,733 vs "limited series" 537; limitierte Auflage 9 vs Serie 5
     {"fr": "série limitée", "en": "limited edition", "de": "limitierte Auflage"},
     {"fr": "édition limitée", "en": "limited edition", "de": "limitierte Auflage"},
 )

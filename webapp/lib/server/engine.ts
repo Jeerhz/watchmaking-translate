@@ -15,6 +15,7 @@ interface Bundle {
   schemas: { review: Record<string, unknown>; fix: Record<string, unknown> };
   style: Record<Lang, string>;
   swiss_de: string;
+  germany_de?: string;
   per_sentence: Record<Lang, Record<string, number>>;
   stopwords: string[];
   glossary: GlossaryEntry[];

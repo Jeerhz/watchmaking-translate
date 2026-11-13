@@ -4,10 +4,10 @@ import { useMemo, useState } from "react";
 import { cost, diffWords, editRate } from "@/lib/client";
 import { runQA, summarize, type QACheck } from "@/lib/qa";
 import { LANG_NAME, type Change, type Lang, type TermHit } from "@/lib/types";
-import { STEP_LABEL, type LangRun, type StepId } from "./run";
+import { STEP_LABEL, type LangRun, type OpenRun, type StepId } from "./run";
 
 const STEPS: StepId[] = ["evidence", "draft", "review", "qa", "fix", "validate"];
-type Tab = "text" | "diff" | "changes" | "qa" | "reasoning" | "prompts" | "cost";
+type Tab = "text" | "diff" | "changes" | "qa" | "open" | "reasoning" | "prompts" | "cost";
 
 function Stepper({ steps }: { steps: LangRun["steps"] }) {
   const icon = { pending: "○", active: "◐", done: "✓", skipped: "–", error: "✕" } as const;
@@ -76,11 +76,13 @@ export default function LangColumn(props: {
   source: string;
   terms: TermHit[];
   swiss: boolean;
+  open: OpenRun | null;
+  openLabel: string;
   onEdit: (text: string) => void;
   onApprove: (by: string) => void;
   onReopen: () => void;
 }) {
-  const { lang, run, source, terms, swiss } = props;
+  const { lang, run, source, terms, swiss, open, openLabel } = props;
   const [tab, setTab] = useState<Tab>("text");
   const [reviewer, setReviewer] = useState("");
   const [showOk, setShowOk] = useState(false);
@@ -90,12 +92,19 @@ export default function LangColumn(props: {
     () => (done && run.edited !== run.final ? runQA(source, run.edited, lang, terms, swiss) : null),
     [done, run.edited, run.final, source, lang, terms, swiss],
   );
+  const openDone = open?.status === "done";
+  const openDiff = useMemo(
+    () => (openDone && done ? diffWords(open!.text, run.edited) : []),
+    [openDone, done, open, run.edited],
+  );
+  const openQA = useMemo(() => (openDone ? runQA(source, open!.text, lang, terms, swiss) : []), [openDone, open, source, lang, terms, swiss]);
   const usd = cost(run.usage);
   const tabs: [Tab, string, number | null][] = [
     ["text", run.approved ? "Validated text" : "Text", null],
     ["diff", "Draft → final", null],
     ["changes", "Editor changes", run.changes.length + run.fixChanges.length],
     ["qa", "QA report", summarize(run.qaFinal).errors + summarize(run.qaFinal).warnings],
+    ...(open ? [["open", "Fine-tuned model", null] as [Tab, string, null]] : []),
     ["reasoning", "Reasoning", null],
     ["prompts", "Prompts", run.prompts.length],
     ["cost", "Cost", null],
@@ -114,7 +123,7 @@ export default function LangColumn(props: {
 
       <div className="tabs" role="tablist">
         {tabs.map(([id, label, n]) => (
-          <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)} disabled={!done && id !== "text" && id !== "reasoning" && id !== "prompts"}>
+          <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)} disabled={!done && id !== "text" && id !== "reasoning" && id !== "prompts" && !(id === "open" && open?.status !== "idle")}>
             {label}
             {n !== null && done && <span className="count">{n}</span>}
           </button>
@@ -238,6 +247,42 @@ export default function LangColumn(props: {
             </label>
           </div>
           <QAList checks={run.qaFinal} showOk={showOk} />
+        </>
+      )}
+
+      {tab === "open" && open && (
+        <>
+          <p className="muted small" style={{ margin: 0 }}>
+            {openLabel}: our own model, fine-tuned on GMT’s translations and the watchmaking corpus, one pass per paragraph with the
+            termbase hits in the prompt — no editorial review. {open.status === "running" && "Translating…"}
+            {openDone && ` ${(open.ms / 1000).toFixed(1)} s, no API cost.`}
+          </p>
+          {open.error && <div className="notice err">{open.error}</div>}
+          <div className="output" lang={lang}>
+            {open.live || <span className="muted">Waiting for the open model…</span>}
+          </div>
+          {openDone && (
+            <>
+              <div className="label">QA checks on the open model’s text</div>
+              <QAInline checks={openQA} />
+            </>
+          )}
+          {openDone && done && (
+            <>
+              <div className="label">Open model → Claude final ({Math.round(editRate(openDiff) * 100)}% of words differ)</div>
+              <div className="diff" lang={lang}>
+                {openDiff.map((p, i) =>
+                  p.op === "=" ? <span key={i}>{p.text}</span> : p.op === "-" ? <del key={i}>{p.text}</del> : <ins key={i}>{p.text}</ins>,
+                )}
+              </div>
+            </>
+          )}
+          {open.prompts.length > 0 && (
+            <details>
+              <summary className="small">Prompt sent to the open model</summary>
+              <pre>{open.prompts.map((p) => `# ${p.title}\n${p.user}`).join("\n\n")}</pre>
+            </details>
+          )}
         </>
       )}
 

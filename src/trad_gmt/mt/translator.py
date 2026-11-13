@@ -27,7 +27,7 @@ class TranslateConfig(BaseModel):
     # quality over speed: Opus 5.5 defaults to "medium"; low|medium|high|xhigh|max
     effort: str = "xhigh"
     review: bool = True
-    swiss_german: bool = False
+    swiss_german: bool = True  # GMT prints Swiss German (ss, «»)
     chunk_words: int = 1200
     max_glossary: int = 120
     max_examples: int = 40

@@ -52,7 +52,7 @@ export function fields(
   return {
     target: lang,
     target_name: LANG_NAME[lang],
-    style_guide: bundle.style[lang] + (lang === "de" && swiss ? bundle.swiss_de : ""),
+    style_guide: bundle.style[lang] + (lang === "de" ? (swiss ? bundle.swiss_de : bundle.germany_de ?? "") : ""),
     glossary: renderGlossary(hits, lang),
     examples: renderExamples(examples, lang),
     context: context ? `\n<context>\n${context}\n</context>\n` : "",

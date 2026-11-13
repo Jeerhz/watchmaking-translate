@@ -1,7 +1,7 @@
 // Client-side orchestration of one language: draft → editorial review → QA → correction,
 // chunk by chunk, with every intermediate state kept for display.
 
-import { AccessError, runStep } from "@/lib/client";
+import { AccessError, runOpen, runStep } from "@/lib/client";
 import { runQA, type QACheck } from "@/lib/qa";
 import { chunkParagraphs, splitParagraphs } from "@/lib/textnorm";
 import type { Change, Effort, Lang, TermHit, Usage, Verdict } from "@/lib/types";
@@ -186,5 +186,52 @@ export async function runLanguage(opts: {
       liveLabel: "",
       steps: Object.fromEntries(Object.entries(r.steps).map(([k, v]) => [k, v === "active" ? "error" : v])) as LangRun["steps"],
     }));
+  }
+}
+
+// ---- fine-tuned open model (one call per paragraph, no review loop) -------------------
+
+export interface OpenRun {
+  status: "idle" | "running" | "done" | "error" | "stopped";
+  text: string;
+  live: string;
+  ms: number;
+  prompts: PromptLog[];
+  error?: string;
+}
+
+export function emptyOpen(): OpenRun {
+  return { status: "idle", text: "", live: "", ms: 0, prompts: [] };
+}
+
+export async function runOpenLanguage(opts: {
+  lang: Lang;
+  text: string;
+  swiss: boolean;
+  signal: AbortSignal;
+  patch: (fn: (r: OpenRun) => OpenRun) => void;
+}): Promise<void> {
+  const { lang, text, swiss, signal, patch } = opts;
+  const paras = splitParagraphs(text);
+  const done: string[] = [];
+  patch(() => ({ ...emptyOpen(), status: "running" }));
+  try {
+    for (const [i, para] of paras.entries()) {
+      const title = paras.length > 1 ? `Open model prompt (paragraph ${i + 1}/${paras.length})` : "Open model prompt";
+      const r = await runOpen(
+        { lang, source: para, swiss },
+        {
+          prompt: (e) => patch((o) => ({ ...o, prompts: [...o.prompts, { title, system: e.system, user: e.user }] })),
+          text: (all) => patch((o) => ({ ...o, live: [...done, all].join("\n\n") })),
+        },
+        signal,
+      );
+      done.push(r.text);
+      patch((o) => ({ ...o, live: done.join("\n\n"), ms: o.ms + r.usage.ms }));
+    }
+    patch((o) => ({ ...o, status: "done", text: done.join("\n\n") }));
+  } catch (err) {
+    const stopped = signal.aborted;
+    patch((o) => ({ ...o, status: stopped ? "stopped" : "error", error: stopped ? undefined : err instanceof Error ? err.message : String(err) }));
   }
 }

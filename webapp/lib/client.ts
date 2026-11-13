@@ -1,6 +1,6 @@
 // Browser helpers: the NDJSON step stream, a word diff and the cost estimate.
 
-import type { StreamEvent, TranslateRequest, Usage } from "./types";
+import type { Lang, StreamEvent, TranslateRequest, Usage } from "./types";
 
 export class AccessError extends Error {}
 
@@ -11,12 +11,23 @@ export interface StepResult {
   user: string;
 }
 
-export async function runStep(
-  req: TranslateRequest,
-  on: { text?: (all: string) => void; thinking?: (all: string) => void; prompt?: (e: Extract<StreamEvent, { t: "prompt" }>) => void },
-  signal: AbortSignal,
-): Promise<StepResult> {
-  const res = await fetch("/api/translate", {
+type StreamHandlers = {
+  text?: (all: string) => void;
+  thinking?: (all: string) => void;
+  prompt?: (e: Extract<StreamEvent, { t: "prompt" }>) => void;
+};
+
+export function runStep(req: TranslateRequest, on: StreamHandlers, signal: AbortSignal): Promise<StepResult> {
+  return streamStep("/api/translate", req, on, signal);
+}
+
+/** One paragraph through the fine-tuned open model (/api/open-mt). */
+export function runOpen(req: { lang: Lang; source: string; swiss?: boolean }, on: StreamHandlers, signal: AbortSignal): Promise<StepResult> {
+  return streamStep("/api/open-mt", req, on, signal);
+}
+
+async function streamStep(path: string, req: object, on: StreamHandlers, signal: AbortSignal): Promise<StepResult> {
+  const res = await fetch(path, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(req),

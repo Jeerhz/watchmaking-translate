@@ -26,6 +26,9 @@ class BuildConfig(BaseModel):
     max_len_ratio: float = 2.6
     valid_pct: float = 2.0
     test_pct: float = 2.0
+    # whole documents pinned to a split by doc_id prefix: the latest GMT issue is the German
+    # test set (GMT's own German exists nowhere else), the one before it validation
+    pinned: dict[str, str] = {"gmt:98:": "test", "gmt:97:": "validation"}
     out_dir: Path = PROCESSED
 
 
@@ -44,6 +47,9 @@ def _key(*texts: str | None) -> str:
 
 def _split_of(doc_id: str, cfg: BuildConfig) -> str:
     """Deterministic split by document so sentences of one entry never leak across splits."""
+    for prefix, split in cfg.pinned.items():
+        if doc_id.startswith(prefix):
+            return split
     bucket = int(hashlib.md5(doc_id.encode()).hexdigest(), 16) % 10_000 / 100
     if bucket < cfg.test_pct:
         return "test"

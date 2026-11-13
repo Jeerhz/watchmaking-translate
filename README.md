@@ -98,6 +98,38 @@ reports chrF for the draft and for the reviewed text, plus glossary-term adheren
   Run, Fly.io…) with `ANTHROPIC_API_KEY` and `HF_TOKEN` as secrets; `data/index/` is rebuilt
   from the Hub dataset on first start.
 
+### Fine-tuned open model
+
+An open model trained on the same data, for comparison with the Claude pipeline
+(`src/trad_gmt/ft/`, cluster side in `cluster/`).
+
+- **Data v2** (`uv run python -c "from trad_gmt.ft.data import build; build()"` →
+  `data/ft/v2/`, uploaded to the dataset repo under `ft/v2/`): 141,878 passages of 1–5
+  consecutive aligned sentences — GMT editorial FR→EN (WorldTempus + GMT Magazine), FR→EN
+  domain, **GMT Magazine FR→DE (Swiss German, prompted as `de-ch`) ×4**, FR→DE domain ×2;
+  patents excluded. Prompt hints: 45 % terms the reference uses, 45 % raw termbase hits as
+  served, 10 % none. Test: the 607 v1 passages + 300 EN / 300 DE passages from GMT Magazine
+  issues 97–98; training passages sharing a French sentence with the test are dropped.
+- **Training on Hugging Face Jobs** (`cluster/hf_job.py`, the same train / merge / generate
+  scripts): `hf jobs uv run --flavor h200 --timeout 9h --secrets HF_TOKEN -v ./cluster:/code
+  cluster/hf_job.py RUN BASE_MODEL --repo OWNER/REPO --lr 1e-4` — LoRA r=64 on all
+  language-model projections, 1 epoch, bf16; merged weights + `lora/` to a private repo, test
+  outputs to `ft/v2/runs/RUN/`. `--generate-only [--strict]` translates the test set with an
+  existing model (baselines); `cluster/score_job.py SYSTEM…` (flavor `l4x1`) scores the runs
+  (COMET-22, chrF++, BLEU, term accuracy; also on the passages every system translated).
+  v1 was trained on Inria CLEPS with the `*.sbatch` scripts.
+- **Claude baseline**: `trad_gmt.ft.claude_eval` runs the deployed desk (draft → review) on the
+  test passages (magazine pools by default; `ACCESS_CODE` in env; resumes where it stopped).
+- **Models** (private): `AdleBenSalem/gmt-mt-gemma4-e4b` (merged bf16 + `lora/`),
+  `AdleBenSalem/gmt-mt-gemma4-e4b-GGUF` (Q4_K_M, Q8_0); 12B to follow.
+- **Serving**: private ZeroGPU Space `AdleBenSalem/gmt-mt` (`space-zerogpu/`, needs HF PRO;
+  `MODEL_ID` variable picks the model). The desk calls it from `/api/open-mt`
+  (`OPEN_MT_URL`, `OPEN_MT_KIND=gradio|openai`, `OPEN_MT_LABEL`, token `OPEN_MT_KEY` or
+  `HF_TOKEN`); `openai` works with any llama.cpp / vLLM server. Locally:
+  `llama-server -hf AdleBenSalem/gmt-mt-gemma4-e4b-GGUF:Q4_K_M --jinja`.
+- **Result** (E4B): ties Claude on English COMET and is closer to GMT's wording, misses more
+  approved terms; Claude stays ahead in German. Details on the desk's Architecture page.
+
 ## Setup
 
 ```bash
@@ -121,6 +153,7 @@ interrupted crawls resume where they stopped.
 
 | source | languages | what | alignment |
 |---|---|---|---|
+| `gmt` — GMT Magazine print PDFs (not public; local folder) | fr·en·de | 10 issues (89–98), French edition (FR + EN) and German edition (DE + EN) — **GMT's own German (Swiss)** | PDF text layer; FR↔DE page by page, FR↔EN within ±1 page; LaBSE; strict filter (whole sentences, score ≥ 0.70); issue 98 = test, 97 = validation |
 | `worldtempus` — WorldTempus (GMT Publishing) | fr·en | ≈23k articles published in both editions — **GMT's own translations, the reference style** | Drupal node id; LaBSE sentence alignment; `tags` keep category / folder (e.g. *GMT Magazine*) / editor / date |
 | `rolex` — rolex.com via the Wayback Machine | fr·en·de | ≈3k editorial pages (World of Rolex, watchmaking, Rolex Family, Perpetual, magazine, collections) | same path under `/fr/`, `/`, `/de/`; LaBSE sentence alignment |
 | `berner` — FH Berner *Dictionnaire professionnel illustré de l'horlogerie* | fr·en·de | ~3.5k concepts, 5.5k terms incl. sub-entries, translated definitions + examples | concept id; sentences by count inside aligned blocks |

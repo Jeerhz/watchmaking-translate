@@ -24,7 +24,7 @@ const SOURCE_LABEL: Record<string, string> = {
 };
 
 function norm(text: string): string {
-  return text.toLocaleLowerCase().replace(/[‐‑–—-]/g, " ").replace(/[’']/g, "'").replace(/\s+/g, " ");
+  return text.toLocaleLowerCase().replace(/ß/g, "ss").replace(/[‐‑–—-]/g, " ").replace(/[’']/g, "'").replace(/\s+/g, " ");
 }
 
 function words(text: string): string[] {
@@ -72,8 +72,8 @@ const TYPO: Record<Lang, [RegExp, string][]> = {
     [/\s[:;!?](\s|$)/, "space before : ; ! ? (French typography)"],
   ],
   de: [
-    [/"/, "gerade Anführungszeichen — Hausstil „…“"],
-    [/[«»]/, "französische Guillemets « » im deutschen Text"],
+    [/"/, "gerade Anführungszeichen — Hausstil «…» (Deutschland: „…“)"],
+    [/«\s|\s»/, "Leerzeichen innerhalb « » (französische Typografie)"],
     [/—/, "Geviertstrich — Hausstil: Halbgeviertstrich mit Leerzeichen ( – )"],
     [/\s[:;!?](\s|$)/, "Leerzeichen vor : ; ! ? (französische Typografie)"],
   ],
@@ -158,6 +158,12 @@ export function runQA(source: string, output: string, lang: Lang, terms: TermHit
   }
   if (lang === "de" && swiss && output.includes("ß")) {
     checks.push({ kind: "typography", severity: "warn", message: "ß im Schweizer Text", flag: "Typography: Swiss German spelling was requested but the text contains ß." });
+  }
+  if (lang === "de" && swiss && /[„“]/.test(output)) {
+    checks.push({ kind: "typography", severity: "warn", message: "„…“ — GMT-Hausstil «…»", flag: "Typography: GMT's Swiss German uses «…» quotes, not „…“." });
+  }
+  if (lang === "de" && !swiss && /[«»]/.test(output)) {
+    checks.push({ kind: "typography", severity: "warn", message: "« » im Text für Deutschland — „…“", flag: "Typography: German for Germany uses „…“ quotes, not « »." });
   }
   return checks;
 }

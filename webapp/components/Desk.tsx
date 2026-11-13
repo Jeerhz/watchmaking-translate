@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Analysis, Effort, Lang } from "@/lib/types";
 import AnalysisPanel from "./AnalysisPanel";
 import LangColumn from "./LangColumn";
-import { emptyRun, runLanguage, type LangRun } from "./run";
+import { emptyOpen, emptyRun, runLanguage, runOpenLanguage, type LangRun, type OpenRun } from "./run";
 
 const SAMPLES: Record<string, string> = {
   "Novelty review": `La nouvelle référence se distingue par un boîtier de 39 mm en or gris 18 carats, dont la lunette lisse et les cornes facettées dialoguent avec un cadran guilloché bleu nuit. À 6 h, une petite seconde décentrée équilibre la composition, tandis que l’indication de la phase de lune occupe le haut du cadran.
@@ -28,12 +28,16 @@ export default function Desk() {
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [analysing, setAnalysing] = useState(false);
   const [effort, setEffort] = useState<Effort>("high");
-  const [swiss, setSwiss] = useState(false);
+  const [swiss, setSwiss] = useState(true); // GMT prints Swiss German
   const [runs, setRuns] = useState<Record<Lang, LangRun>>({ en: emptyRun(), de: emptyRun() });
+  const [openCfg, setOpenCfg] = useState<{ configured: boolean; label: string } | null>(null);
+  const [useOpen, setUseOpen] = useState(true);
+  const [opens, setOpens] = useState<Record<Lang, OpenRun> | null>(null);
   const [runSource, setRunSource] = useState<{ text: string; analysis: Analysis } | null>(null);
   const [stats, setStats] = useState<{ terms: number; sentences: Record<string, number> } | null>(null);
   const ctl = useRef<AbortController | null>(null);
-  const running = runs.en.status === "running" || runs.de.status === "running";
+  const running =
+    runs.en.status === "running" || runs.de.status === "running" || opens?.en.status === "running" || opens?.de.status === "running";
 
   useEffect(() => {
     try {
@@ -43,6 +47,10 @@ export default function Desk() {
     fetch("/api/analyze")
       .then((r) => (r.ok ? r.json() : null))
       .then(setStats)
+      .catch(() => undefined);
+    fetch("/api/open-mt")
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setOpenCfg)
       .catch(() => undefined);
   }, []);
 
@@ -78,9 +86,18 @@ export default function Desk() {
     setRunSource({ text: src, analysis: a });
     ctl.current = new AbortController();
     const signal = ctl.current.signal;
-    await Promise.all(
-      (["en", "de"] as Lang[]).map((lang) => runLanguage({ lang, text: src, terms: a.terms, effort, swiss, signal, patch: patchFor(lang) })),
-    );
+    const withOpen = Boolean(openCfg?.configured && useOpen);
+    setOpens(withOpen ? { en: emptyOpen(), de: emptyOpen() } : null);
+    const openPatch = (lang: Lang) => (fn: (r: OpenRun) => OpenRun) => setOpens((all) => (all ? { ...all, [lang]: fn(all[lang]) } : all));
+    await Promise.all([
+      ...(["en", "de"] as Lang[]).map((lang) => runLanguage({ lang, text: src, terms: a.terms, effort, swiss, signal, patch: patchFor(lang) })),
+      // the open model runs alongside, one language after the other (one ZeroGPU Space)
+      withOpen
+        ? (async () => {
+            for (const lang of ["en", "de"] as Lang[]) await runOpenLanguage({ lang, text: src, swiss, signal, patch: openPatch(lang) });
+          })()
+        : Promise.resolve(),
+    ]);
     ctl.current = null;
   }
 
@@ -103,6 +120,7 @@ export default function Desk() {
               final: r.final,
               validated_text: r.approved ? r.edited : null,
               validation: r.approved ?? null,
+              open_model: opens?.[l].status === "done" ? { model: openCfg?.label, text: opens[l].text, ms: opens[l].ms } : null,
               editor_changes: r.changes,
               correction_changes: r.fixChanges,
               qa_verdicts: r.verdicts,
@@ -167,8 +185,14 @@ export default function Desk() {
               </select>
             </label>
             <label className="check">
-              <input type="checkbox" checked={swiss} onChange={(e) => setSwiss(e.target.checked)} disabled={running} /> Swiss German (ss)
+              <input type="checkbox" checked={swiss} onChange={(e) => setSwiss(e.target.checked)} disabled={running} /> Swiss German (ss, «») — GMT house style
             </label>
+            {openCfg?.configured && (
+              <label className="check" title={openCfg.label}>
+                <input type="checkbox" checked={useOpen} onChange={(e) => setUseOpen(e.target.checked)} disabled={running} /> Compare with our fine-tuned
+                model
+              </label>
+            )}
           </div>
           <div className="row">
             <button className="btn" onClick={translate} disabled={running || !text.trim()}>
@@ -203,6 +227,8 @@ export default function Desk() {
             source={runSource?.text ?? text}
             terms={runSource?.analysis.terms ?? []}
             swiss={swiss}
+            open={opens?.[lang] ?? null}
+            openLabel={openCfg?.label ?? ""}
             onEdit={(t) => patchFor(lang)((r) => ({ ...r, edited: t }))}
             onApprove={(by) =>
               patchFor(lang)((r) => ({

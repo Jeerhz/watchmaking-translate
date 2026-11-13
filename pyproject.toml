@@ -15,6 +15,7 @@ dependencies = [
     "huggingface-hub>=2.2.0",
     "numpy>=2.5.4",
     "pydantic>=2.14.1",
+    "pymupdf>=2.1",
     "sacrebleu>=2.6.0",
     "scipy>=1.18.1",
     "selectolax>=1.0.1",

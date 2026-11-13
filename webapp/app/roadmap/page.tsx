@@ -48,12 +48,13 @@ const PHASES: [string, string, string[]][] = [
     ],
   ],
   [
-    "Months 3 – 6",
+    "Started Nov 2026",
     "Fine-tuning experiment",
     [
-      "LoRA fine-tune of an open model (Gemma 4 31B, Apache 2.0) on the 190k GMT FR→EN sentence pairs, with the glossary in the prompt so it learns to obey the termbase.",
-      "Then preference-tune on the editors’ corrections collected by the desk (draft rejected, validated text preferred).",
-      "Enter it as one more candidate in the agentic pool. Promote it only if it wins blind reviews. German waits for in-house German data.",
+      "Done: LoRA fine-tune of Gemma 4 12B and E4B on 150k GMT and domain passages, termbase hits in the prompt (recipe and scores on the Architecture page). Testable in the desk.",
+      "Next: Gemma 4 31B; add retrieved memory examples to the training prompt; preference-tune on the editors’ corrections collected by the desk.",
+      "German: train on synthetic FR→DE from the Claude pipeline until the magazines give real GMT German.",
+      "Enter it as one more candidate in the agentic pool. Promote it only if it wins blind reviews.",
     ],
   ],
 ];
@@ -72,7 +73,8 @@ export default function Roadmap() {
       <div className="callout gold">
         <b>In short.</b> Keep a frontier model with retrieval and the termbase as the backbone. Invest first in measurement and in the editors’ feedback
         loop. Add a multi-model comparison step, the pattern behind the 2026 winners. Treat fine-tuning and self-hosting as an experiment that feeds that
-        comparison, not as a replacement. At GMT’s volume, the API cost is small next to the value of an editor’s time.
+        comparison, not as a replacement. At GMT’s volume, the API cost is small next to the value of an editor’s time. The first fine-tune is done and
+        can be tried in the desk (see <a href="/architecture#fine-tune">Architecture</a>).
       </div>
 
       <h2>State of the art (WMT 2026)</h2>
@@ -178,6 +180,18 @@ export default function Roadmap() {
       <h2>Fine-tuning and self-hosting</h2>
       <div className="card-grid">
         <div className="card">
+          <h3>What we did (Nov 2026)</h3>
+          <ul>
+            <li>Gemma 4 12B and E4B, LoRA r = 64, one epoch on one H100 (Inria CLEPS).</li>
+            <li>149,805 passages: GMT editorial FR→EN, FH / FHH / brand / Rolex FR→EN and FR→DE.</li>
+            <li>Weights in private Hugging Face repos; served on a private ZeroGPU Space (Hugging Face PRO, $9 / month, daily GPU quota).</li>
+            <li>
+              Result: the tuned 4B model ties Claude on English COMET and is closer to GMT’s wording, but misses more approved terms; Claude stays
+              ahead in German (<a href="/architecture#fine-tune">scores</a>).
+            </li>
+          </ul>
+        </div>
+        <div className="card">
           <h3>What can be fine-tuned</h3>
           <ul>
             <li>
@@ -233,7 +247,10 @@ export default function Roadmap() {
           <tbody>
             <tr>
               <td>Fine-tune or prompt + retrieval?</td>
-              <td>Prompt + retrieval on a frontier model as the backbone. Fine-tune an open model as an experiment, entered as a candidate.</td>
+              <td>
+                Prompt + retrieval on a frontier model as the backbone. Our first fine-tune (Gemma 4 E4B) is a credible English draft candidate but not a
+                replacement: enter it in the comparison pool, enforce terms harder in training, try the 12B and 31B.
+              </td>
             </tr>
             <tr>
               <td>Self-host or API?</td>

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import RetrievalChart from "@/components/RetrievalChart";
+import { FT_RECIPE, FT_RESULTS, FT_RESULTS_NOTE, RECIPE } from "@/lib/ft";
 import { RETRIEVAL } from "@/lib/results";
 
 export const metadata: Metadata = { title: "Architecture — GMT Translation Desk" };
@@ -49,9 +50,37 @@ export default function Architecture() {
       <div>
         <h1>How the translation system works</h1>
         <p className="lede">
-          A retrieval-augmented, terminology-constrained pipeline around a frontier model, with deterministic checks and a human at the end. Every piece of
-          evidence the model sees is shown to the editor, so every choice can be traced.
+          A retrieval-augmented, terminology-constrained pipeline around a frontier model, with deterministic checks and a human at the end, plus our own
+          fine-tuned open model for comparison. Every piece of evidence the model sees is shown to the editor.
         </p>
+      </div>
+
+      <h2 id="recipe">System recipe</h2>
+      <div className="table-wrap panel" style={{ padding: 0 }}>
+        <table>
+          <thead>
+            <tr>
+              <th>Part</th>
+              <th>Model or method</th>
+              <th>Used for</th>
+              <th>Trained?</th>
+              <th>Data</th>
+            </tr>
+          </thead>
+          <tbody>
+            {RECIPE.map((r) => (
+              <tr key={r.part}>
+                <td>
+                  <b>{r.part}</b>
+                </td>
+                <td>{r.model}</td>
+                <td>{r.role}</td>
+                <td>{r.training}</td>
+                <td>{r.data}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       <section className="panel" aria-labelledby="flow">
@@ -88,6 +117,63 @@ export default function Architecture() {
           are split by paragraph and each part receives the end of the previous translated part as context.
         </p>
       </section>
+
+      <h2 id="fine-tune">Our fine-tuned open model</h2>
+      <p className="muted small" style={{ margin: 0 }}>
+        Trained to compare a self-hosted model with the Claude pipeline. In the desk, tick “Compare with our fine-tuned model”: each language gets a
+        “Fine-tuned model” tab with its translation, QA and a diff against Claude’s final text.
+      </p>
+      <div className="table-wrap panel" style={{ padding: 0 }}>
+        <table>
+          <tbody>
+            {FT_RECIPE.map(([k, v]) => (
+              <tr key={k}>
+                <th style={{ width: 150 }}>{k}</th>
+                <td>{v}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {FT_RESULTS.length ? (
+        <>
+          <p className="muted small" style={{ margin: 0 }}>
+            Held-out passages (articles never seen in training), scored against GMT’s published translation. COMET-22 and chrF++: higher is closer to
+            the reference; term accuracy: share of approved terms the reference uses that the output also uses.
+          </p>
+          <div className="table-wrap panel" style={{ padding: 0 }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>System</th>
+                  <th>Test pool</th>
+                  <th className="num">Passages</th>
+                  <th className="num">COMET-22</th>
+                  <th className="num">chrF++</th>
+                  <th className="num">Term accuracy</th>
+                </tr>
+              </thead>
+              <tbody>
+                {FT_RESULTS.map((r) => (
+                  <tr key={r.system + r.pool}>
+                    <td>{r.system}</td>
+                    <td>{r.pool}</td>
+                    <td className="num">{r.n}</td>
+                    <td className="num">{r.comet.toFixed(1)}</td>
+                    <td className="num">{r.chrf.toFixed(1)}</td>
+                    <td className="num">{r.terms.toFixed(1)}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {FT_RESULTS_NOTE && <div className="callout">{FT_RESULTS_NOTE}</div>}
+        </>
+      ) : (
+        <p className="muted small" style={{ margin: 0 }}>
+          Training and evaluation in progress — scores against GMT’s published translations will appear here.
+        </p>
+      )}
 
       <h2>The logic behind each choice</h2>
       <div className="card-grid">

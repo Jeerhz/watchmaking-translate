@@ -25,7 +25,7 @@ DOMAIN_SOURCES: dict[str, tuple[str, ...]] = {
 # examples retrieved per French sentence, by pool
 PER_SENTENCE: dict[str, dict[str, int]] = {
     "en": {"style": 2, "domain": 1},
-    "de": {"domain": 3},
+    "de": {"style": 2, "domain": 1},  # style: GMT Magazine German edition
 }
 
 
@@ -72,7 +72,9 @@ def select_pool(seg: pd.DataFrame, lang: str, pool: str, cfg: ResourceConfig) ->
     ok = seg[lang].notna() & (score.isna() | (score >= cfg.min_score))
     ok &= seg.fr.str.len().between(cfg.min_chars, cfg.max_chars)
     if pool == "style":
-        ok &= (seg.source == "worldtempus") & seg.tags.map(lambda t: is_house_style(list(t)))
+        ok &= seg.source.isin(("worldtempus", "gmt")) & seg.tags.map(
+            lambda t: is_house_style(list(t))
+        )
     else:
         ok &= seg.source.isin(DOMAIN_SOURCES[lang])
     out = seg[ok]
