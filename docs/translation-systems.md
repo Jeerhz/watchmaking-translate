@@ -40,6 +40,62 @@ the final text — the "combine several MT outputs with an LLM" pattern from rec
 All four start with the **TM exact-match pass**: a French sentence GMT has already published
 in translation (≥ 95 % fuzzy match) is reused as is, and flagged as such.
 
-## Evidence so far
+## Evidence so far (November 2026)
 
-See the results section (filled from `data/ft/v2/` runs).
+Test set `ft/v2` (1,207 held-out passages). Metrics: COMET-22, chrF++ (ß = ss for German),
+BLEU, share of approved terms (the termbase terms GMT's reference uses) found in the output.
+
+**GMT Magazine issues 97–98** (GMT's own EN and Swiss DE), passages both systems translated:
+
+| System | EN COMET | EN chrF++ | EN terms | DE COMET | DE chrF++ | DE terms |
+|---|---|---|---|---|---|---|
+| Claude Opus 5.5 draft + review (n = 271 / 255) | 84.7 | **73.7** | **94.5 %** | 81.5 | **57.9** | **97.0 %** |
+| DeepL-GMT (S1) | **84.8** | 73.0 | 91.5 % | **82.0** | 57.5 | 93.6 % |
+
+**Earlier test pools** (WorldTempus house-style EN, industry DE), passages Claude translated:
+
+| System | EN style COMET / chrF++ / terms (n = 80) | DE industry COMET / chrF++ / terms (n = 45) |
+|---|---|---|
+| Claude Opus 5.5 draft + review | 83.8 / 64.8 / **93.8 %** | 82.3 / **62.4** / **97.0 %** |
+| DeepL-GMT (S1) | **83.9** / 63.6 / 89.1 % | **82.6** / 59.6 / 85.9 % |
+| Gemma 4 E4B fine-tuned v1 | 83.7 / **66.1** / 89.1 % | 81.9 / 60.0 / 84.8 % |
+
+**DeepL ablation** (GMT Magazine, EN n = 91 / DE n = 88):
+
+| DeepL configuration | EN COMET | EN chrF++ | EN terms | DE COMET | DE terms |
+|---|---|---|---|---|---|
+| raw (EN-GB / DE-CH) | 84.4 | 70.4 | 88.4 % | 80.9 | 91.6 % |
+| + previous sentences as context | 84.9 | 72.1 | 91.2 % | **81.4** | **94.1 %** |
+| + GMT glossary | 84.8 | 72.0 | 90.5 % | 81.3 | 93.3 % |
+| + style list / rules + soft terms (S1) | **85.2** | **72.3** | 91.2 % | 80.7 | 94.1 % |
+
+Reading:
+- Customised DeepL **matches Claude on COMET** (overall adequacy/fluency) at ~ 1/10 of the cost, in
+  both languages, and is the most fluent Swiss German engine we have.
+- Claude stays **closer to GMT's wording** (chrF++, BLEU) and **applies approved terms better**
+  (+3 to +11 points) — the editorial review and the examples matter there.
+- In DeepL, **context is the lever that pays** (+0.5 COMET, +1.7 chrF++, +3 pts terms); the hard
+  glossary adds nothing measurable on top (DeepL already knows these terms); the German inline
+  house rules cost 0.7 COMET → keep German rules minimal; the English style list helps BLEU (+3.5).
+- The fine-tuned 4B model is closest to GMT's English wording (chrF++ 66.1) but weakest on terms.
+
+**S3 — CometKiwi selection between Claude and DeepL** (658 passages both translated; DeepL
+picked 59 %):
+
+| Pool | Claude COMET / terms | DeepL COMET / terms | S3 COMET / terms |
+|---|---|---|---|
+| EN GMT Magazine (271) | 84.7 / 94.5 % | 84.8 / 91.5 % | **85.0** / 93.3 % |
+| DE GMT Magazine (255) | 81.5 / 97.0 % | 82.0 / 93.6 % | **82.2** / 95.3 % |
+| EN house style (80) | 83.8 / 93.8 % | 83.9 / 89.1 % | **84.1** / 89.8 % |
+| DE industry (45) | 82.3 / 97.0 % | 82.6 / 85.9 % | **82.7** / 90.9 % |
+
+S3 is best on COMET everywhere, but by only +0.2–0.3, and it gives back part of Claude's term
+lead; CometKiwi and COMET are from the same model family, so this gain is optimistic. Selection
+alone is not worth Claude's full cost — it pays only once Claude's draft is replaced by an edit.
+
+These support **S2** (DeepL draft + Claude editor): DeepL supplies adequacy and Swiss German, the
+Claude review supplies GMT wording and term discipline, at roughly half of today's Claude cost.
+S2 and S4 need Anthropic credit to be measured.
+
+**Applied in the desk:** English → DeepL with style list + soft terms + context; German →
+DeepL with glossary + context only (the German inline rules cost 0.7 COMET).

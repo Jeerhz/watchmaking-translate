@@ -47,7 +47,7 @@ export interface DeepLRequest {
 }
 
 export function buildRequest(source: string, lang: Lang, swiss: boolean, context: string | null): DeepLRequest {
-  const soft = softInstructions(source, lang, swiss);
+  const soft = lang === "en" ? softInstructions(source, lang, swiss) : [];
   const body: Record<string, unknown> = {
     text: [source],
     source_lang: "FR",
@@ -58,11 +58,12 @@ export function buildRequest(source: string, lang: Lang, swiss: boolean, context
     glossary_id: setup.glossary_id,
     show_billed_characters: true,
   };
-  if (lang === "en" && setup.style_en) {
-    body.style_id = setup.style_en;
-    if (soft.length) body.custom_instructions = soft;
-  } else {
-    body.custom_instructions = [...setup.rules[lang], ...soft].slice(0, 10);
+  // Measured on GMT Magazine (docs/translation-systems.md): English gains from the style list and
+  // soft terms; German inline rules cost 0.7 COMET, so German gets glossary + context only.
+  if (lang === "en") {
+    if (setup.style_en) body.style_id = setup.style_en;
+    const instr = setup.style_en ? soft : [...setup.rules.en, ...soft];
+    if (instr.length) body.custom_instructions = instr.slice(0, 10);
   }
   if (context) body.context = context;
   return { body, soft };

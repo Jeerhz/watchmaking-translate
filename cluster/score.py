@@ -16,6 +16,15 @@ import torch
 from comet import download_model, load_from_checkpoint
 
 
+def device_kwargs() -> dict:
+    """COMET predict() settings: CUDA, else Apple MPS, else CPU (which needs loader workers)."""
+    if torch.cuda.is_available():
+        return {"gpus": 1}
+    if torch.backends.mps.is_available():
+        return {"gpus": 1, "accelerator": "mps"}
+    return {"gpus": 0, "num_workers": 2}
+
+
 def fold(s: str) -> str:
     s = unicodedata.normalize("NFKD", s.lower().replace("’", "'").replace("ß", "ss"))
     return "".join(c for c in s if not unicodedata.combining(c))
@@ -42,15 +51,17 @@ def main() -> None:
         ids = [i for i in rows if i in hyps]
         scores = comet.predict(
             [{"src": rows[i]["fr"], "mt": hyps[i], "ref": rows[i]["ref"]} for i in ids],
-            batch_size=32, gpus=1 if torch.cuda.is_available() else 0, progress_bar=False,
+            batch_size=32, progress_bar=False, **device_kwargs(),
         ).scores
         groups: dict[str, list[int]] = defaultdict(list)
         for k, i in enumerate(ids):
             groups[f"{rows[i]['lang']}/{rows[i]['pool']}"].append(k)
         report[name] = {}
         for g, ks in sorted(groups.items()):
-            hyp = [hyps[ids[k]] for k in ks]
-            ref = [rows[ids[k]]["ref"] for k in ks]
+            # German: ß and ss are orthographic variants (Swiss vs German), not translation errors
+            norm = (lambda t: t.replace("ß", "ss")) if g.startswith("de") else (lambda t: t)
+            hyp = [norm(hyps[ids[k]]) for k in ks]
+            ref = [norm(rows[ids[k]]["ref"]) for k in ks]
             hit = tot = 0
             for k in ks:
                 h = fold(hyps[ids[k]])

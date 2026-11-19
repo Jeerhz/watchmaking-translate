@@ -90,19 +90,31 @@ export interface FtResult {
   terms: number;
 }
 
-/** Scored on the passages every system translated (Claude's run stopped at 132 when API credit ran out). */
+/** Scored on the passages every system in the group translated (Claude's runs stopped when API credit ran out). */
 export const FT_RESULTS: FtResult[] = [
+  { system: "Claude Opus 5.5 — draft + review (current desk)", pool: "EN · GMT Magazine 97–98", n: 271, comet: 84.7, chrf: 73.7, terms: 94.5 },
+  { system: "DeepL — GMT glossary + style + context", pool: "EN · GMT Magazine 97–98", n: 271, comet: 84.8, chrf: 73.0, terms: 91.5 },
+  { system: "Best of Claude / DeepL per passage (CometKiwi)", pool: "EN · GMT Magazine 97–98", n: 271, comet: 85.0, chrf: 73.5, terms: 93.3 },
+  { system: "Claude Opus 5.5 — draft + review (current desk)", pool: "DE (Swiss) · GMT Magazine 97–98", n: 255, comet: 81.5, chrf: 57.9, terms: 97.0 },
+  { system: "DeepL — GMT glossary + style + context", pool: "DE (Swiss) · GMT Magazine 97–98", n: 255, comet: 82.0, chrf: 57.5, terms: 93.6 },
+  { system: "Best of Claude / DeepL per passage (CometKiwi)", pool: "DE (Swiss) · GMT Magazine 97–98", n: 255, comet: 82.2, chrf: 57.8, terms: 95.3 },
   { system: "Claude Opus 5.5 — draft + review (current desk)", pool: "EN · GMT house style", n: 80, comet: 83.8, chrf: 64.8, terms: 93.8 },
+  { system: "DeepL — GMT glossary + style + context", pool: "EN · GMT house style", n: 80, comet: 83.9, chrf: 63.6, terms: 89.1 },
+  { system: "Best of Claude / DeepL per passage (CometKiwi)", pool: "EN · GMT house style", n: 80, comet: 84.1, chrf: 64.8, terms: 89.8 },
   { system: "Gemma 4 E4B fine-tuned (ours)", pool: "EN · GMT house style", n: 80, comet: 83.7, chrf: 66.1, terms: 89.1 },
   { system: "Gemma 4 12B, not tuned", pool: "EN · GMT house style", n: 80, comet: 81.7, chrf: 59.7, terms: 91.4 },
   { system: "Gemma 4 E4B, not tuned", pool: "EN · GMT house style", n: 80, comet: 82.0, chrf: 60.4, terms: 90.6 },
-  { system: "Claude Opus 5.5 — draft + review (current desk)", pool: "DE · industry", n: 45, comet: 82.3, chrf: 62.3, terms: 97.0 },
+  { system: "Claude Opus 5.5 — draft + review (current desk)", pool: "DE · industry", n: 45, comet: 82.3, chrf: 62.4, terms: 97.0 },
+  { system: "DeepL — GMT glossary + style + context", pool: "DE · industry", n: 45, comet: 82.6, chrf: 59.6, terms: 85.9 },
+  { system: "Best of Claude / DeepL per passage (CometKiwi)", pool: "DE · industry", n: 45, comet: 82.7, chrf: 60.6, terms: 90.9 },
   { system: "Gemma 4 E4B fine-tuned (ours)", pool: "DE · industry", n: 45, comet: 81.9, chrf: 60.0, terms: 84.8 },
   { system: "Gemma 4 12B, not tuned", pool: "DE · industry", n: 45, comet: 80.5, chrf: 55.9, terms: 98.0 },
   { system: "Gemma 4 E4B, not tuned", pool: "DE · industry", n: 45, comet: 79.5, chrf: 54.7, terms: 96.0 },
 ];
 export const FT_RESULTS_NOTE =
-  "Fine-tuning works: on all 607 test passages it lifts E4B by +1.6 to +2.5 COMET, +6 chrF++ and +9 to +11 BLEU, and the tuned 4B model beats the untuned 12B. " +
-  "In English it ties Claude on COMET and is closer to GMT’s own wording (chrF++ 66.1 vs 64.8) — but it misses more approved terms (89% vs 94%) and has no review step. " +
-  "In German Claude stays ahead, mostly on terminology (97% vs 85%). Verdict: a credible, cheap candidate for English drafts; not a replacement. " +
-  "Next: the 12B fine-tune (training), and stronger term enforcement in training.";
+  "DeepL customised with our data matches Claude on COMET in both languages (and on GMT Magazine’s Swiss German) at about a tenth of the cost; " +
+  "Claude stays closer to GMT’s own wording (chrF++) and applies approved terms better (94–97 % vs 86–94 %). " +
+  "Our fine-tuned 4B model is closest to GMT’s English wording but weakest on terms. " +
+  "In DeepL, passing the previous sentences as context is the lever that pays; the hard glossary adds little. " +
+  "Picking the better of Claude and DeepL per passage with a reference-free quality estimator (CometKiwi) adds only +0.2–0.3 COMET. " +
+  "Next: DeepL draft + Claude editor (needs Anthropic credit), and the 12B / E4B v2 fine-tunes on the GMT Magazine data (need HF credit).";

@@ -271,7 +271,7 @@ export default function LangColumn(props: {
           swiss={swiss}
           claudeFinal={done ? run.edited : null}
           name="DeepL"
-          intro={`${deeplLabel}: DeepL (${lang === "en" ? "EN-GB" : swiss ? "DE-CH" : "DE-DE"}, quality model) with the GMT glossary — the terms GMT’s own translations use consistently — GMT house style, the remaining watchmaking terms as instructions and the previous paragraph as context. One pass per paragraph, no editorial review.`}
+          intro={`${deeplLabel}: DeepL (${lang === "en" ? "EN-GB" : swiss ? "DE-CH" : "DE-DE"}, quality model) with the GMT glossary — the terms GMT’s own translations use consistently —${lang === "en" ? " the GMT English style list, the remaining watchmaking terms as instructions" : ""} and the previous paragraph as context. One pass per paragraph, no editorial review.`}
           cost={(a) => ` ${(a.ms / 1000).toFixed(1)} s, ${a.chars.toLocaleString("en")} characters (≈ €${((a.chars * 22) / 1e6).toFixed(3)} on DeepL Growth).`}
           promptLabel="Requests sent to DeepL"
         />
