@@ -92,6 +92,39 @@ def provenance_label(source: str, doc_id: str, tags: list[str]) -> str:
     return " · ".join(p for p in parts if p)
 
 
+def magazine_samples(n: int = 40, seed: int = 0) -> list[dict[str, str]]:
+    """Held-out GMT Magazine passages (issues 97–98, never in the memory pools) with GMT's own
+    English and German, for blind human comparison of the systems in the desk."""
+    import random
+
+    out: list[dict[str, str]] = []
+    for split in ("validation", "test"):
+        seg = load_segments(ResourceConfig(), split=split)
+        seg = seg[seg.source == "gmt"]
+        for doc, d in seg.groupby("doc_id", sort=False):
+            run: list[tuple[str, str, str]] = []
+            for fr, en, de in [*zip(d.fr, d.en, d.de, strict=True), (None, None, None)]:
+                if isinstance(fr, str) and isinstance(en, str) and isinstance(de, str):
+                    run.append((fr, en, de))
+                    if len(run) < 6:
+                        continue
+                words = sum(len(x[0].split()) for x in run)
+                if len(run) >= 3 and 50 <= words <= 220:
+                    _, issue, page = str(doc).split(":")
+                    out.append(
+                        {
+                            "id": f"{doc}:{len(out)}",
+                            "title": f"GMT Magazine {issue} · {page}",
+                            "fr": " ".join(x[0] for x in run),
+                            "en": " ".join(x[1] for x in run),
+                            "de": " ".join(x[2] for x in run),
+                        }
+                    )
+                run = []
+    random.Random(seed).shuffle(out)
+    return out[:n]
+
+
 def export_web(res: Resources, cfg: ExportConfig | None = None) -> Path:
     cfg = cfg or ExportConfig()
     extra = ("url",) if cfg.provenance else ()
@@ -152,6 +185,7 @@ def export_web(res: Resources, cfg: ExportConfig | None = None) -> Path:
         "house_terms": list(HOUSE_TERMS),
         "glossary": glossary,
         "memory": memory,
+        "samples": magazine_samples() if cfg.provenance else [],
     }
     cfg.out.parent.mkdir(parents=True, exist_ok=True)
     data = json.dumps(bundle, ensure_ascii=False, separators=(",", ":")).encode("utf-8")

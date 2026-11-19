@@ -39,7 +39,7 @@ export async function POST(req: Request): Promise<Response> {
     user = fill(p.translate_user, f);
   } else if (step === "review") {
     system = fill(p.review_system, f);
-    user = fill(p.review_user, { ...f, draft: body.draft! });
+    user = withEditorNotes(fill(p.review_user, { ...f, draft: body.draft! }), body);
     schema = bundle.schemas.review;
   } else {
     system = fill(p.review_system, f);
@@ -115,4 +115,28 @@ export async function POST(req: Request): Promise<Response> {
   return new Response(stream, {
     headers: { "content-type": "application/x-ndjson; charset=utf-8", "cache-control": "no-store" },
   });
+}
+
+/** Review step: say where the draft comes from and give the other engines' versions. */
+function withEditorNotes(user: string, body: TranslateRequest): string {
+  const notes: string[] = [];
+  if (body.draftBy) {
+    notes.push(
+      `The draft above is raw machine translation by ${body.draftBy}, not a GMT translator's work. ` +
+        "Edit it as strictly as a junior translator's draft: approved glossary terms, GMT house style, and the voice of the GMT examples.",
+    );
+  }
+  const alts = (body.alternatives ?? []).filter((a) => a.text?.trim()).slice(0, 3);
+  if (alts.length) {
+    notes.push(
+      "<alternatives>\nOther translations of the same source by other engines. Where one renders a passage more accurately, " +
+        "more idiomatically or closer to the GMT examples, use that wording in your final text and list it as a change. Never copy an error.\n" +
+        alts.map((a) => `<alternative engine="${a.engine}">\n${a.text.trim()}\n</alternative>`).join("\n") +
+        "\n</alternatives>",
+    );
+  }
+  if (!notes.length) return user;
+  const at = user.lastIndexOf("\n\nReturn JSON");
+  const block = "\n\n" + notes.join("\n\n");
+  return at >= 0 ? user.slice(0, at) + block + user.slice(at) : user + block;
 }

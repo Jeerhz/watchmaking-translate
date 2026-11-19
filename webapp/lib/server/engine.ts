@@ -20,6 +20,7 @@ interface Bundle {
   stopwords: string[];
   glossary: GlossaryEntry[];
   memory: Record<Lang, Record<string, MemoryRow[]>>;
+  samples?: { id: string; title: string; fr: string; en: string; de: string }[];
 }
 
 class BM25 {

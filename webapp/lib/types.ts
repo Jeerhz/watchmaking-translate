@@ -84,4 +84,8 @@ export interface TranslateRequest {
   issues?: string[];
   swiss?: boolean;
   effort?: Effort;
+  /** review: the engine that produced the draft when it is not Claude (e.g. "DeepL") */
+  draftBy?: string;
+  /** review: other engines' translations of the same source, for the editor to borrow from */
+  alternatives?: { engine: string; text: string }[];
 }

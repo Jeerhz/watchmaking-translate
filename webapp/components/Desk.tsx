@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Analysis, Effort, Lang } from "@/lib/types";
 import AnalysisPanel from "./AnalysisPanel";
 import LangColumn from "./LangColumn";
-import { emptyOpen, emptyRun, runLanguage, runOpenLanguage, type LangRun, type OpenRun } from "./run";
+import { emptyOpen, emptyRun, PIPELINES, runLanguage, runOpenLanguage, type LangRun, type OpenRun, type Pipeline } from "./run";
 
 const SAMPLES: Record<string, string> = {
   "Novelty review": `La nouvelle référence se distingue par un boîtier de 39 mm en or gris 18 carats, dont la lunette lisse et les cornes facettées dialoguent avec un cadran guilloché bleu nuit. À 6 h, une petite seconde décentrée équilibre la composition, tandis que l’indication de la phase de lune occupe le haut du cadran.
@@ -29,6 +29,8 @@ export default function Desk() {
   const [analysing, setAnalysing] = useState(false);
   const [effort, setEffort] = useState<Effort>("high");
   const [swiss, setSwiss] = useState(true); // GMT prints Swiss German
+  const [pipeline, setPipeline] = useState<Pipeline>("claude");
+  const [ranPipeline, setRanPipeline] = useState<Pipeline>("claude");
   const [runs, setRuns] = useState<Record<Lang, LangRun>>({ en: emptyRun(), de: emptyRun() });
   const [openCfg, setOpenCfg] = useState<{ configured: boolean; label: string } | null>(null);
   const [useOpen, setUseOpen] = useState(true);
@@ -94,6 +96,7 @@ export default function Desk() {
     const a = await analyse(src);
     if (!a) return;
     setRunSource({ text: src, analysis: a });
+    setRanPipeline(pipeline);
     ctl.current = new AbortController();
     const signal = ctl.current.signal;
     const withOpen = Boolean(openCfg?.configured && useOpen);
@@ -103,7 +106,7 @@ export default function Desk() {
     setDeepls(withDeepl ? { en: emptyOpen(), de: emptyOpen() } : null);
     const deeplPatch = (lang: Lang) => (fn: (r: OpenRun) => OpenRun) => setDeepls((all) => (all ? { ...all, [lang]: fn(all[lang]) } : all));
     await Promise.all([
-      ...(["en", "de"] as Lang[]).map((lang) => runLanguage({ lang, text: src, terms: a.terms, effort, swiss, signal, patch: patchFor(lang) })),
+      ...(["en", "de"] as Lang[]).map((lang) => runLanguage({ lang, text: src, terms: a.terms, effort, swiss, signal, patch: patchFor(lang), pipeline })),
       // the open model runs alongside, one language after the other (one ZeroGPU Space)
       withOpen
         ? (async () => {
@@ -122,7 +125,7 @@ export default function Desk() {
     if (!runSource) return;
     const record = {
       created: new Date().toISOString(),
-      settings: { model: "claude-opus-5-5", effort, swiss },
+      settings: { model: "claude-opus-5-5", pipeline: ranPipeline, effort, swiss },
       source: runSource.text,
       terms: runSource.analysis.terms.map((h) => ({ fr: h.surface, en: h.en[0]?.[0] ?? null, de: h.de[0]?.[0] ?? null })),
       references: runSource.analysis.references,
@@ -193,6 +196,16 @@ export default function Desk() {
           </div>
           <textarea className="source" lang="fr" spellCheck={false} value={text} onChange={(e) => setText(e.target.value)} aria-label="French source text" />
           <div className="row">
+            <label className="check" title={PIPELINES.find((x) => x.id === pipeline)?.help}>
+              Pipeline
+              <select value={pipeline} onChange={(e) => setPipeline(e.target.value as Pipeline)} disabled={running}>
+                {PIPELINES.map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.label}
+                  </option>
+                ))}
+              </select>
+            </label>
             <label className="check">
               Effort
               <select value={effort} onChange={(e) => setEffort(e.target.value as Effort)} disabled={running}>
@@ -255,6 +268,7 @@ export default function Desk() {
             openLabel={openCfg?.label ?? ""}
             deepl={deepls?.[lang] ?? null}
             deeplLabel={deeplCfg?.label ?? ""}
+            pipelineLabel={PIPELINES.find((x) => x.id === ranPipeline)?.label ?? ""}
             onEdit={(t) => patchFor(lang)((r) => ({ ...r, edited: t }))}
             onApprove={(by) =>
               patchFor(lang)((r) => ({

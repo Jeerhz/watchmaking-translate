@@ -99,3 +99,15 @@ S2 and S4 need Anthropic credit to be measured.
 
 **Applied in the desk:** English → DeepL with style list + soft terms + context; German →
 DeepL with glossary + context only (the German inline rules cost 0.7 COMET).
+
+## Testing them (desk, November 2026)
+
+- **Translator page** — "Pipeline" selector: *Claude* · *DeepL → Claude editor* (S2) · *Claude +
+  DeepL fusion* (S4, the editor sees DeepL's version beside Claude's draft); DeepL alone (S1) and
+  the fine-tuned model stay as comparison tabs. Every step, prompt, change and cost is shown.
+- **Compare systems page** (`/compare`) — runs any of the five systems on the same text, both
+  languages, shown paragraph by paragraph; **blind** by default (shuffled "System A/B/…");
+  1–5 rating, best pick and a note per candidate; saved in the browser, exportable as CSV, with a
+  running summary (mean rating, times chosen best). 40 held-out GMT Magazine passages (issues
+  97–98) can be loaded, and then **GMT's own published translation** joins the candidates, hidden
+  among the systems — the human benchmark.

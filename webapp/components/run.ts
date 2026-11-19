@@ -7,6 +7,18 @@ import { chunkParagraphs, splitParagraphs } from "@/lib/textnorm";
 import type { Change, Effort, Lang, TermHit, Usage, Verdict } from "@/lib/types";
 
 export type StepId = "evidence" | "draft" | "review" | "qa" | "fix" | "validate";
+
+/** Claude-edited pipelines: who drafts, and whether the editor also sees DeepL's version. */
+export type Pipeline = "claude" | "deepl-claude" | "fusion";
+export const PIPELINES: { id: Pipeline; label: string; help: string }[] = [
+  { id: "claude", label: "Claude", help: "Claude drafts, Claude’s chief sub-editor reviews, QA, correction" },
+  { id: "deepl-claude", label: "DeepL → Claude editor", help: "DeepL (GMT glossary, house style, context) drafts; Claude’s sub-editor edits it into GMT style" },
+  {
+    id: "fusion",
+    label: "Claude + DeepL fusion",
+    help: "Claude and DeepL both draft; the sub-editor reviews Claude’s draft with DeepL’s version beside it and keeps the best wording",
+  },
+];
 export type StepState = "pending" | "active" | "done" | "skipped" | "error";
 
 export const STEP_LABEL: Record<StepId, string> = {
@@ -43,6 +55,8 @@ export interface LangRun {
   qaFinal: QACheck[];
   prompts: PromptLog[];
   usage: Usage[];
+  deeplChars: number; // billed DeepL characters (drafts / alternatives), priced separately
+  alternative: string; // DeepL's version shown to the editor (fusion)
   error?: string;
   approved?: { by: string; at: string; edited: boolean };
 }
@@ -67,6 +81,8 @@ export function emptyRun(): LangRun {
     qaFinal: [],
     prompts: [],
     usage: [],
+    deeplChars: 0,
+    alternative: "",
   };
 }
 
@@ -88,13 +104,15 @@ export async function runLanguage(opts: {
   swiss: boolean;
   signal: AbortSignal;
   patch: Patch;
+  pipeline?: Pipeline;
 }): Promise<void> {
-  const { lang, text, terms, effort, swiss, signal, patch } = opts;
+  const { lang, text, terms, effort, swiss, signal, patch, pipeline = "claude" } = opts;
   const setStep = (id: StepId, s: StepState) => patch((r) => ({ ...r, steps: { ...r.steps, [id]: s } }));
   const chunks = chunkParagraphs(splitParagraphs(text)).map((c) => c.join("\n\n"));
   const drafts: string[] = [];
   const reviewed: string[] = [];
   const finals: string[] = [];
+  const alternatives: string[] = [];
   let context: string | null = null;
   let anyFix = false;
   patch(() => ({ ...emptyRun(), status: "running", steps: { ...emptyRun().steps, evidence: "done" } }));
@@ -113,20 +131,52 @@ export async function runLanguage(opts: {
         text: (all: string) => patch((r) => ({ ...r, live: (prior ? prior + "\n\n" : "") + all })),
       });
 
-      // 1. draft (streamed)
+      // 1. draft (streamed): Claude, or DeepL; for fusion both, DeepL's goes to the editor
       setStep("draft", "active");
-      patch((r) => ({ ...r, part, liveLabel: "Translator is drafting" + part, thinking: "" }));
-      const d = await runStep({ step: "draft", ...base }, live("Draft prompt"), signal);
-      drafts.push(d.text);
-      patch((r) => ({ ...r, usage: [...r.usage, d.usage], draft: drafts.join("\n\n"), live: [prior, d.text].filter(Boolean).join("\n\n") }));
+      const deeplCtx = i > 0 ? chunks[i - 1].slice(-1500) : null; // previous source text, not billed
+      const viaDeepL = () =>
+        runDeepL({ lang, source: chunk, swiss, context: deeplCtx }, { prompt: live("DeepL request").prompt }, signal);
+      let draftText: string;
+      let alt: string | null = null;
+      if (pipeline === "deepl-claude") {
+        patch((r) => ({ ...r, part, liveLabel: "DeepL is drafting" + part, thinking: "" }));
+        const d = await viaDeepL();
+        draftText = d.text;
+        patch((r) => ({ ...r, deeplChars: r.deeplChars + d.usage.input }));
+      } else {
+        patch((r) => ({ ...r, part, liveLabel: (pipeline === "fusion" ? "Claude and DeepL are drafting" : "Translator is drafting") + part, thinking: "" }));
+        const [d, a] = await Promise.all([
+          runStep({ step: "draft", ...base }, live("Draft prompt"), signal),
+          pipeline === "fusion" ? viaDeepL() : Promise.resolve(null),
+        ]);
+        draftText = d.text;
+        patch((r) => ({ ...r, usage: [...r.usage, d.usage] }));
+        if (a) {
+          alt = a.text;
+          alternatives.push(a.text);
+          patch((r) => ({ ...r, deeplChars: r.deeplChars + a.usage.input, alternative: alternatives.join("\n\n") }));
+        }
+      }
+      drafts.push(draftText);
+      patch((r) => ({ ...r, draft: drafts.join("\n\n"), live: [prior, draftText].filter(Boolean).join("\n\n") }));
       setStep("draft", i === chunks.length - 1 ? "done" : "active");
 
       // 2. editorial review (structured JSON: final text + changes with reasons)
       setStep("review", "active");
       patch((r) => ({ ...r, liveLabel: "Chief sub-editor is reviewing" + part, thinking: "" }));
-      const rv = await runStep({ step: "review", ...base, draft: d.text }, { ...live("Review prompt"), text: undefined }, signal);
+      const rv = await runStep(
+        {
+          step: "review",
+          ...base,
+          draft: draftText,
+          ...(pipeline === "deepl-claude" ? { draftBy: "DeepL" } : {}),
+          ...(alt ? { alternatives: [{ engine: "DeepL", text: alt }] } : {}),
+        },
+        { ...live("Review prompt"), text: undefined },
+        signal,
+      );
       const review = parseJSON<{ translation: string; changes: Change[] }>(rv.text);
-      let final = review.translation.trim() || d.text;
+      let final = review.translation.trim() || draftText;
       reviewed.push(final);
       patch((r) => ({ ...r, usage: [...r.usage, rv.usage], changes: [...r.changes, ...review.changes], reviewed: reviewed.join("\n\n") }));
       setStep("review", i === chunks.length - 1 ? "done" : "active");

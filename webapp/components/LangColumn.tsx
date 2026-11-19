@@ -80,6 +80,7 @@ export default function LangColumn(props: {
   openLabel: string;
   deepl: OpenRun | null;
   deeplLabel: string;
+  pipelineLabel: string;
   onEdit: (text: string) => void;
   onApprove: (by: string) => void;
   onReopen: () => void;
@@ -112,7 +113,11 @@ export default function LangColumn(props: {
       <div className="panel-head">
         <h2 style={{ margin: 0, fontSize: "1.25rem" }}>{lang === "en" ? "English" : "Deutsch"}</h2>
         <span className="muted small">
-          {run.status === "running" ? run.liveLabel + "…" : done ? `${run.usage.length} model calls · ≈ $${usd.toFixed(2)}` : ""}
+          {run.status === "running"
+            ? run.liveLabel + "…"
+            : done
+              ? `${props.pipelineLabel} · ${run.usage.length} Claude calls · ≈ $${usd.toFixed(2)}${run.deeplChars ? ` + DeepL ${run.deeplChars.toLocaleString("en")} chars (≈ €${((run.deeplChars * 22) / 1e6).toFixed(3)})` : ""}`
+              : ""}
         </span>
       </div>
       <Stepper steps={run.steps} />
@@ -191,12 +196,20 @@ export default function LangColumn(props: {
       {tab === "diff" && done && (
         <>
           <p className="muted small" style={{ margin: 0 }}>
-            Translator draft against the {run.edited !== run.final ? "edited" : "final"} text: {Math.round(editRate(diff) * 100)}% of the draft’s words
-            changed.
+            {props.pipelineLabel.startsWith("DeepL") ? "DeepL draft" : "Translator draft"} against the{" "}
+            {run.edited !== run.final ? "edited" : "final"} text: {Math.round(editRate(diff) * 100)}% of the draft’s words changed.
           </p>
           <div className="diff" lang={lang}>
             {diff.map((p, i) => (p.op === "=" ? <span key={i}>{p.text}</span> : p.op === "-" ? <del key={i}>{p.text}</del> : <ins key={i}>{p.text}</ins>))}
           </div>
+          {run.alternative && (
+            <details>
+              <summary className="small">DeepL’s version, shown to the editor beside the draft</summary>
+              <div className="output" lang={lang}>
+                {run.alternative}
+              </div>
+            </details>
+          )}
         </>
       )}
 
