@@ -7,7 +7,7 @@ import { LANG_NAME, type Change, type Lang, type TermHit } from "@/lib/types";
 import { STEP_LABEL, type LangRun, type OpenRun, type StepId } from "./run";
 
 const STEPS: StepId[] = ["evidence", "draft", "review", "qa", "fix", "validate"];
-type Tab = "text" | "diff" | "changes" | "qa" | "open" | "reasoning" | "prompts" | "cost";
+type Tab = "text" | "diff" | "changes" | "qa" | "open" | "deepl" | "reasoning" | "prompts" | "cost";
 
 function Stepper({ steps }: { steps: LangRun["steps"] }) {
   const icon = { pending: "○", active: "◐", done: "✓", skipped: "–", error: "✕" } as const;
@@ -78,11 +78,13 @@ export default function LangColumn(props: {
   swiss: boolean;
   open: OpenRun | null;
   openLabel: string;
+  deepl: OpenRun | null;
+  deeplLabel: string;
   onEdit: (text: string) => void;
   onApprove: (by: string) => void;
   onReopen: () => void;
 }) {
-  const { lang, run, source, terms, swiss, open, openLabel } = props;
+  const { lang, run, source, terms, swiss, open, openLabel, deepl, deeplLabel } = props;
   const [tab, setTab] = useState<Tab>("text");
   const [reviewer, setReviewer] = useState("");
   const [showOk, setShowOk] = useState(false);
@@ -92,12 +94,6 @@ export default function LangColumn(props: {
     () => (done && run.edited !== run.final ? runQA(source, run.edited, lang, terms, swiss) : null),
     [done, run.edited, run.final, source, lang, terms, swiss],
   );
-  const openDone = open?.status === "done";
-  const openDiff = useMemo(
-    () => (openDone && done ? diffWords(open!.text, run.edited) : []),
-    [openDone, done, open, run.edited],
-  );
-  const openQA = useMemo(() => (openDone ? runQA(source, open!.text, lang, terms, swiss) : []), [openDone, open, source, lang, terms, swiss]);
   const usd = cost(run.usage);
   const tabs: [Tab, string, number | null][] = [
     ["text", run.approved ? "Validated text" : "Text", null],
@@ -105,6 +101,7 @@ export default function LangColumn(props: {
     ["changes", "Editor changes", run.changes.length + run.fixChanges.length],
     ["qa", "QA report", summarize(run.qaFinal).errors + summarize(run.qaFinal).warnings],
     ...(open ? [["open", "Fine-tuned model", null] as [Tab, string, null]] : []),
+    ...(deepl ? [["deepl", "DeepL", null] as [Tab, string, null]] : []),
     ["reasoning", "Reasoning", null],
     ["prompts", "Prompts", run.prompts.length],
     ["cost", "Cost", null],
@@ -123,7 +120,7 @@ export default function LangColumn(props: {
 
       <div className="tabs" role="tablist">
         {tabs.map(([id, label, n]) => (
-          <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)} disabled={!done && id !== "text" && id !== "reasoning" && id !== "prompts" && !(id === "open" && open?.status !== "idle")}>
+          <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)} disabled={!done && id !== "text" && id !== "reasoning" && id !== "prompts" && !(id === "open" && open?.status !== "idle") && !(id === "deepl" && deepl?.status !== "idle")}>
             {label}
             {n !== null && done && <span className="count">{n}</span>}
           </button>
@@ -251,39 +248,33 @@ export default function LangColumn(props: {
       )}
 
       {tab === "open" && open && (
-        <>
-          <p className="muted small" style={{ margin: 0 }}>
-            {openLabel}: our own model, fine-tuned on GMT’s translations and the watchmaking corpus, one pass per paragraph with the
-            termbase hits in the prompt — no editorial review. {open.status === "running" && "Translating…"}
-            {openDone && ` ${(open.ms / 1000).toFixed(1)} s, no API cost.`}
-          </p>
-          {open.error && <div className="notice err">{open.error}</div>}
-          <div className="output" lang={lang}>
-            {open.live || <span className="muted">Waiting for the open model…</span>}
-          </div>
-          {openDone && (
-            <>
-              <div className="label">QA checks on the open model’s text</div>
-              <QAInline checks={openQA} />
-            </>
-          )}
-          {openDone && done && (
-            <>
-              <div className="label">Open model → Claude final ({Math.round(editRate(openDiff) * 100)}% of words differ)</div>
-              <div className="diff" lang={lang}>
-                {openDiff.map((p, i) =>
-                  p.op === "=" ? <span key={i}>{p.text}</span> : p.op === "-" ? <del key={i}>{p.text}</del> : <ins key={i}>{p.text}</ins>,
-                )}
-              </div>
-            </>
-          )}
-          {open.prompts.length > 0 && (
-            <details>
-              <summary className="small">Prompt sent to the open model</summary>
-              <pre>{open.prompts.map((p) => `# ${p.title}\n${p.user}`).join("\n\n")}</pre>
-            </details>
-          )}
-        </>
+        <AltPanel
+          lang={lang}
+          alt={open}
+          source={source}
+          terms={terms}
+          swiss={swiss}
+          claudeFinal={done ? run.edited : null}
+          name="Open model"
+          intro={`${openLabel}: our own model, fine-tuned on GMT’s translations and the watchmaking corpus, one pass per paragraph with the termbase hits in the prompt — no editorial review.`}
+          cost={(a) => ` ${(a.ms / 1000).toFixed(1)} s, no API cost.`}
+          promptLabel="Prompt sent to the open model"
+        />
+      )}
+
+      {tab === "deepl" && deepl && (
+        <AltPanel
+          lang={lang}
+          alt={deepl}
+          source={source}
+          terms={terms}
+          swiss={swiss}
+          claudeFinal={done ? run.edited : null}
+          name="DeepL"
+          intro={`${deeplLabel}: DeepL (${lang === "en" ? "EN-GB" : swiss ? "DE-CH" : "DE-DE"}, quality model) with the GMT glossary — the terms GMT’s own translations use consistently — GMT house style, the remaining watchmaking terms as instructions and the previous paragraph as context. One pass per paragraph, no editorial review.`}
+          cost={(a) => ` ${(a.ms / 1000).toFixed(1)} s, ${a.chars.toLocaleString("en")} characters (≈ €${((a.chars * 22) / 1e6).toFixed(3)} on DeepL Growth).`}
+          promptLabel="Requests sent to DeepL"
+        />
       )}
 
       {tab === "reasoning" && (
@@ -371,5 +362,58 @@ function CopyButton({ text }: { text: string }) {
     >
       {copied ? "Copied" : "Copy"}
     </button>
+  );
+}
+
+/** A comparison system's output: text, QA checks and the word diff against Claude's final. */
+function AltPanel(props: {
+  lang: Lang;
+  alt: OpenRun;
+  source: string;
+  terms: TermHit[];
+  swiss: boolean;
+  claudeFinal: string | null;
+  name: string;
+  intro: string;
+  cost: (a: OpenRun) => string;
+  promptLabel: string;
+}) {
+  const { lang, alt, source, terms, swiss, claudeFinal, name } = props;
+  const altDone = alt.status === "done";
+  const qa = useMemo(() => (altDone ? runQA(source, alt.text, lang, terms, swiss) : []), [altDone, alt.text, source, lang, terms, swiss]);
+  const diff = useMemo(() => (altDone && claudeFinal ? diffWords(alt.text, claudeFinal) : []), [altDone, alt.text, claudeFinal]);
+  return (
+    <>
+      <p className="muted small" style={{ margin: 0 }}>
+        {props.intro} {alt.status === "running" && "Translating…"}
+        {altDone && props.cost(alt)}
+      </p>
+      {alt.error && <div className="notice err">{alt.error}</div>}
+      <div className="output" lang={lang}>
+        {alt.live || <span className="muted">Waiting for {name}…</span>}
+      </div>
+      {altDone && (
+        <>
+          <div className="label">QA checks on {name}’s text</div>
+          <QAInline checks={qa} />
+        </>
+      )}
+      {altDone && claudeFinal && (
+        <>
+          <div className="label">
+            {name} → Claude final ({Math.round(editRate(diff) * 100)}% of words differ)
+          </div>
+          <div className="diff" lang={lang}>
+            {diff.map((p, i) => (p.op === "=" ? <span key={i}>{p.text}</span> : p.op === "-" ? <del key={i}>{p.text}</del> : <ins key={i}>{p.text}</ins>))}
+          </div>
+        </>
+      )}
+      {alt.prompts.length > 0 && (
+        <details>
+          <summary className="small">{props.promptLabel}</summary>
+          <pre>{alt.prompts.map((p) => `# ${p.title}\n${p.user}`).join("\n\n")}</pre>
+        </details>
+      )}
+    </>
   );
 }

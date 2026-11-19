@@ -12,6 +12,7 @@ from collections import defaultdict
 from pathlib import Path
 
 import sacrebleu
+import torch
 from comet import download_model, load_from_checkpoint
 
 
@@ -41,7 +42,7 @@ def main() -> None:
         ids = [i for i in rows if i in hyps]
         scores = comet.predict(
             [{"src": rows[i]["fr"], "mt": hyps[i], "ref": rows[i]["ref"]} for i in ids],
-            batch_size=32, gpus=1, progress_bar=False,
+            batch_size=32, gpus=1 if torch.cuda.is_available() else 0, progress_bar=False,
         ).scores
         groups: dict[str, list[int]] = defaultdict(list)
         for k, i in enumerate(ids):

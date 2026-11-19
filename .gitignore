@@ -12,7 +12,11 @@ data/processed/
 data/index/
 data/eval/
 data/ft/
+data/deepl/
 web/bundle.json
 
 # Vercel CLI link
 .vercel/
+
+# secrets
+.env

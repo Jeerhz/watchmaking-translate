@@ -26,6 +26,15 @@ export function runOpen(req: { lang: Lang; source: string; swiss?: boolean }, on
   return streamStep("/api/open-mt", req, on, signal);
 }
 
+/** One paragraph through DeepL customised for GMT (/api/deepl). */
+export function runDeepL(
+  req: { lang: Lang; source: string; swiss?: boolean; context?: string | null },
+  on: StreamHandlers,
+  signal: AbortSignal,
+): Promise<StepResult> {
+  return streamStep("/api/deepl", req, on, signal);
+}
+
 async function streamStep(path: string, req: object, on: StreamHandlers, signal: AbortSignal): Promise<StepResult> {
   const res = await fetch(path, {
     method: "POST",

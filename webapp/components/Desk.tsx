@@ -33,11 +33,17 @@ export default function Desk() {
   const [openCfg, setOpenCfg] = useState<{ configured: boolean; label: string } | null>(null);
   const [useOpen, setUseOpen] = useState(true);
   const [opens, setOpens] = useState<Record<Lang, OpenRun> | null>(null);
+  const [deeplCfg, setDeeplCfg] = useState<{ configured: boolean; label: string } | null>(null);
+  const [useDeepl, setUseDeepl] = useState(true);
+  const [deepls, setDeepls] = useState<Record<Lang, OpenRun> | null>(null);
   const [runSource, setRunSource] = useState<{ text: string; analysis: Analysis } | null>(null);
   const [stats, setStats] = useState<{ terms: number; sentences: Record<string, number> } | null>(null);
   const ctl = useRef<AbortController | null>(null);
   const running =
-    runs.en.status === "running" || runs.de.status === "running" || opens?.en.status === "running" || opens?.de.status === "running";
+    runs.en.status === "running" || runs.de.status === "running" || opens?.en.status === "running" ||
+    opens?.de.status === "running" ||
+    deepls?.en.status === "running" ||
+    deepls?.de.status === "running";
 
   useEffect(() => {
     try {
@@ -51,6 +57,10 @@ export default function Desk() {
     fetch("/api/open-mt")
       .then((r) => (r.ok ? r.json() : null))
       .then(setOpenCfg)
+      .catch(() => undefined);
+    fetch("/api/deepl")
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setDeeplCfg)
       .catch(() => undefined);
   }, []);
 
@@ -89,6 +99,9 @@ export default function Desk() {
     const withOpen = Boolean(openCfg?.configured && useOpen);
     setOpens(withOpen ? { en: emptyOpen(), de: emptyOpen() } : null);
     const openPatch = (lang: Lang) => (fn: (r: OpenRun) => OpenRun) => setOpens((all) => (all ? { ...all, [lang]: fn(all[lang]) } : all));
+    const withDeepl = Boolean(deeplCfg?.configured && useDeepl);
+    setDeepls(withDeepl ? { en: emptyOpen(), de: emptyOpen() } : null);
+    const deeplPatch = (lang: Lang) => (fn: (r: OpenRun) => OpenRun) => setDeepls((all) => (all ? { ...all, [lang]: fn(all[lang]) } : all));
     await Promise.all([
       ...(["en", "de"] as Lang[]).map((lang) => runLanguage({ lang, text: src, terms: a.terms, effort, swiss, signal, patch: patchFor(lang) })),
       // the open model runs alongside, one language after the other (one ZeroGPU Space)
@@ -97,6 +110,10 @@ export default function Desk() {
             for (const lang of ["en", "de"] as Lang[]) await runOpenLanguage({ lang, text: src, swiss, signal, patch: openPatch(lang) });
           })()
         : Promise.resolve(),
+      // DeepL: both languages in parallel
+      ...(withDeepl
+        ? (["en", "de"] as Lang[]).map((lang) => runOpenLanguage({ lang, text: src, swiss, signal, patch: deeplPatch(lang), engine: "deepl" }))
+        : []),
     ]);
     ctl.current = null;
   }
@@ -121,6 +138,7 @@ export default function Desk() {
               validated_text: r.approved ? r.edited : null,
               validation: r.approved ?? null,
               open_model: opens?.[l].status === "done" ? { model: openCfg?.label, text: opens[l].text, ms: opens[l].ms } : null,
+              deepl: deepls?.[l].status === "done" ? { model: deeplCfg?.label, text: deepls[l].text, ms: deepls[l].ms, billed_characters: deepls[l].chars } : null,
               editor_changes: r.changes,
               correction_changes: r.fixChanges,
               qa_verdicts: r.verdicts,
@@ -139,7 +157,8 @@ export default function Desk() {
     URL.revokeObjectURL(url);
   }
 
-  const anyDone = runs.en.status === "done" || runs.de.status === "done";
+  const anyDone =
+    runs.en.status === "done" || runs.de.status === "done" || deepls?.en.status === "done" || opens?.en.status === "done";
   const memSize = stats ? Object.values(stats.sentences).reduce((a, b) => a + b, 0) : 0;
 
   return (
@@ -193,6 +212,11 @@ export default function Desk() {
                 model
               </label>
             )}
+            {deeplCfg?.configured && (
+              <label className="check" title={deeplCfg.label}>
+                <input type="checkbox" checked={useDeepl} onChange={(e) => setUseDeepl(e.target.checked)} disabled={running} /> Compare with DeepL
+              </label>
+            )}
           </div>
           <div className="row">
             <button className="btn" onClick={translate} disabled={running || !text.trim()}>
@@ -229,6 +253,8 @@ export default function Desk() {
             swiss={swiss}
             open={opens?.[lang] ?? null}
             openLabel={openCfg?.label ?? ""}
+            deepl={deepls?.[lang] ?? null}
+            deeplLabel={deeplCfg?.label ?? ""}
             onEdit={(t) => patchFor(lang)((r) => ({ ...r, edited: t }))}
             onApprove={(by) =>
               patchFor(lang)((r) => ({

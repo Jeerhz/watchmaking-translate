@@ -1,7 +1,7 @@
 // Client-side orchestration of one language: draft → editorial review → QA → correction,
 // chunk by chunk, with every intermediate state kept for display.
 
-import { AccessError, runOpen, runStep } from "@/lib/client";
+import { AccessError, runDeepL, runOpen, runStep } from "@/lib/client";
 import { runQA, type QACheck } from "@/lib/qa";
 import { chunkParagraphs, splitParagraphs } from "@/lib/textnorm";
 import type { Change, Effort, Lang, TermHit, Usage, Verdict } from "@/lib/types";
@@ -189,19 +189,20 @@ export async function runLanguage(opts: {
   }
 }
 
-// ---- fine-tuned open model (one call per paragraph, no review loop) -------------------
+// ---- comparison systems: fine-tuned open model, DeepL (one call per paragraph, no review) ----
 
 export interface OpenRun {
   status: "idle" | "running" | "done" | "error" | "stopped";
   text: string;
   live: string;
   ms: number;
+  chars: number; // billed characters (DeepL)
   prompts: PromptLog[];
   error?: string;
 }
 
 export function emptyOpen(): OpenRun {
-  return { status: "idle", text: "", live: "", ms: 0, prompts: [] };
+  return { status: "idle", text: "", live: "", ms: 0, chars: 0, prompts: [] };
 }
 
 export async function runOpenLanguage(opts: {
@@ -210,16 +211,20 @@ export async function runOpenLanguage(opts: {
   swiss: boolean;
   signal: AbortSignal;
   patch: (fn: (r: OpenRun) => OpenRun) => void;
+  engine?: "open" | "deepl";
 }): Promise<void> {
-  const { lang, text, swiss, signal, patch } = opts;
+  const { lang, text, swiss, signal, patch, engine = "open" } = opts;
   const paras = splitParagraphs(text);
   const done: string[] = [];
+  const name = engine === "deepl" ? "DeepL request" : "Open model prompt";
   patch(() => ({ ...emptyOpen(), status: "running" }));
   try {
     for (const [i, para] of paras.entries()) {
-      const title = paras.length > 1 ? `Open model prompt (paragraph ${i + 1}/${paras.length})` : "Open model prompt";
-      const r = await runOpen(
-        { lang, source: para, swiss },
+      const title = paras.length > 1 ? `${name} (paragraph ${i + 1}/${paras.length})` : name;
+      // DeepL: the preceding paragraph as context (not translated, not billed)
+      const context = i > 0 ? paras[i - 1].slice(-1500) : null;
+      const r = await (engine === "deepl" ? runDeepL : runOpen)(
+        { lang, source: para, swiss, context },
         {
           prompt: (e) => patch((o) => ({ ...o, prompts: [...o.prompts, { title, system: e.system, user: e.user }] })),
           text: (all) => patch((o) => ({ ...o, live: [...done, all].join("\n\n") })),
@@ -227,7 +232,7 @@ export async function runOpenLanguage(opts: {
         signal,
       );
       done.push(r.text);
-      patch((o) => ({ ...o, live: done.join("\n\n"), ms: o.ms + r.usage.ms }));
+      patch((o) => ({ ...o, live: done.join("\n\n"), ms: o.ms + r.usage.ms, chars: o.chars + (engine === "deepl" ? r.usage.input : 0) }));
     }
     patch((o) => ({ ...o, status: "done", text: done.join("\n\n") }));
   } catch (err) {

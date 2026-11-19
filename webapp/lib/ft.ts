@@ -32,6 +32,13 @@ export const RECIPE: RecipeRow[] = [
     data: "Only what the prompt carries",
   },
   {
+    part: "DeepL (comparison)",
+    model: "DeepL API, quality model, EN-GB / DE-CH",
+    role: "Single-pass translation with GMT customisation; runs beside Claude in the desk",
+    training: "Not trained by us — customised per request: glossary, style rule list, term instructions, previous paragraph as context",
+    data: "Glossary of 57 EN / 24 DE terms GMT’s own translations render consistently (≥ 80 %) + house overrides; house style rules",
+  },
+  {
     part: "Magazine corpus",
     model: "PDF text layer + LaBSE alignment",
     role: "Turns the FR and DE print editions (each with the EN) into aligned FR–EN–DE sentences",
