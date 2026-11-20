@@ -144,7 +144,7 @@ textarea.source {
 .sent sup { font-family: var(--font-mono); font-size: 10px; color: var(--gold-ink); margin-right: 2px; }
 mark.term { background: var(--gold-soft); color: inherit; border-bottom: 2px solid var(--gold); padding: 0 1px; border-radius: 2px; }
 .term-list { display: grid; gap: 8px; list-style: none; margin: 0; padding: 0; max-height: 360px; overflow: auto; }
-.term { display: grid; gap: 4px; padding: 8px 10px; border-left: 3px solid var(--gold); background: var(--card); }
+.term-list .term { display: grid; gap: 4px; padding: 8px 10px; border-left: 3px solid var(--gold); background: var(--card); }
 .term .fr { font-family: var(--font-text); font-size: 16px; }
 .term .tg { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .term .lang { font-size: 11px; font-weight: 600; color: var(--muted); width: 22px; }
