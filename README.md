@@ -130,6 +130,15 @@ An open model trained on the same data, for comparison with the Claude pipeline
 - **Result** (E4B): ties Claude on English COMET and is closer to GMT's wording, misses more
   approved terms; Claude stays ahead in German. Details on the desk's Architecture page.
 
+## Results
+
+Every experiment and what it showed, on one page: [docs/results.md](docs/results.md). In short
+(French as the source): Claude and customised DeepL are level on overall quality; Claude is
+3–12 points ahead on approved terms, DeepL costs about a tenth; the "diagnose, then repair"
+editor is safer than the previous one, and no editor measurably improves a Claude draft.
+
+**English → French and English → German are required too and are not built yet.**
+
 ## Setup
 
 ```bash

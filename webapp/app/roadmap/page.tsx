@@ -266,7 +266,17 @@ export default function Roadmap() {
             </tr>
             <tr>
               <td>German?</td>
-              <td>The weakest link: no GMT German data yet. Aligning the 10 magazines is the single most valuable data task.</td>
+              <td>
+                The 10 magazines are aligned (4.5k French–German pairs) and GMT’s Swiss German is now in the examples and the test set. Still far less
+                data than English.
+              </td>
+            </tr>
+            <tr>
+              <td>English as the source?</td>
+              <td>
+                Required (English → French, English → German) and not built yet: the desk assumes a French source. The data allows it; see{" "}
+                <a href="/architecture#results">Results so far</a>.
+              </td>
             </tr>
           </tbody>
         </table>

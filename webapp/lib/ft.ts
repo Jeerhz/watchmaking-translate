@@ -122,6 +122,4 @@ export const FT_RESULTS_NOTE =
   "DeepL customised with our data matches Claude on COMET in both languages (and on GMT Magazine’s Swiss German) at about a tenth of the cost; " +
   "Claude stays closer to GMT’s own wording (chrF++) and applies approved terms better (94–97 % vs 86–94 %). " +
   "Our fine-tuned 4B model is closest to GMT’s English wording but weakest on terms. " +
-  "In DeepL, passing the previous sentences as context is the lever that pays; the hard glossary adds little. " +
-  "Picking the better of Claude and DeepL per passage with a reference-free quality estimator (CometKiwi) adds only +0.2–0.3 COMET. " +
-  "Next: DeepL draft + Claude editor (needs Anthropic credit), and the 12B / E4B v2 fine-tunes on the GMT Magazine data (need HF credit).";
+  "All figures are for French as the source; the Claude rows use the previous single-pass editor.";

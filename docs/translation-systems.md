@@ -1,7 +1,8 @@
 # GMT translation systems — built from the blocks we have
 
 FR → EN (British) and FR → DE (Swiss) for GMT Magazine / WorldTempus watchmaking copy.
-DeepL details in [deepl-system.md](deepl-system.md).
+DeepL details in [deepl-system.md](deepl-system.md). A one-page summary of every result is in
+[results.md](results.md). English as a source (EN → FR, EN → DE) is required too and not built yet.
 
 ## The blocks
 
@@ -202,7 +203,22 @@ Implemented in the web desk (`webapp/`); the Python batch translator still uses 
 | Component switches | Termbase, pruning, examples, style guide, editor and DeepL context can each be switched off for a run; the previous editor is kept as a candidate. | `lib/candidates.ts` |
 | Shared record | Every run logs numbers only (errors by kind, edits applied and refused, QA flags, cost, time). Validations store source, draft, system text and the editor's text; judgments store error spans and 0–100 scores. Private Vercel Blob store, Paris region. | `lib/server/store.ts`, `/scoreboard` |
 
-Not done, on purpose: no additional agent roles, no best-of selection on a single metric, and no reading of a chrF++ drop after editing as a loss. Whether the new editor beats the previous one is to be settled by blind ratings (candidate "Claude + previous editor" on the Compare page); it has not been measured yet.
+Not done, on purpose: no additional agent roles, no best-of selection on a single metric, and no reading of a chrF++ drop after editing as a loss. Whether the new editor beats the previous one is to be settled by blind ratings (candidate "Claude + previous editor" on the Compare page).
+
+**Editor measured on the same draft (22 November 2026).** 80 held-out magazine passages (40 EN, 40 DE), one Claude draft each, both editors run on that draft, effort high (`data/ft/v2/editor-eval2/`):
+
+| | New editor | Previous editor | No editor |
+|---|---|---|---|
+| COMET-22 EN / DE | 84.11 / 81.99 | 84.13 / 81.86 | 84.09 / 81.95 |
+| MetricX-24 EN / DE (lower is better) | 4.84 / 2.52 | 4.85 / 2.51 | 4.87 / 2.53 |
+| MetricX-24 QE EN / DE | 5.36 / 3.08 | 5.40 / 3.06 | 5.39 / 3.07 |
+| chrF++ EN / DE | 76.30 / 59.54 | 76.22 / 59.46 | 76.36 / 59.62 |
+| Passages unchanged EN / DE (of 40) | 32 / 37 | 27 / 22 | all |
+| Editor cost per 1,000 words EN / DE | $0.18 / $0.23 | $0.23 / $0.31 | draft alone: $0.22 / $0.33 |
+
+Paired COMET-22 difference against no editor, with 95 % bootstrap interval: new editor +0.03 [−0.02, +0.08] (8 passages better, 4 worse, 68 the same); previous editor −0.02 [−0.19, +0.08] (19 better, 13 worse, 48 the same). On the passages each one changed: new editor (11) COMET-22 +0.22, MetricX-24 −0.14; previous editor (31) COMET-22 −0.06, MetricX-24 −0.05. The new editor diagnosed 13 errors (8 fluency, 3 style, 1 terminology, 1 typography; 3 major, no accuracy error) and the guard refused no edit.
+
+Reading: on a Claude draft neither editor changes the scores; the new one edits a third as often and its edits are more often improvements. A first run with a separate draft per candidate (79 passages, `editor-eval/`) showed gaps of 0.2–0.3 COMET-22 that were draft-to-draft noise. Not measured: the editor on a DeepL draft.
 
 ## Testing them (desk, November 2026)
 

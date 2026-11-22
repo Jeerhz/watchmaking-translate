@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import RetrievalChart from "@/components/RetrievalChart";
+import { BEST, EXPERIMENTS, NOT_TESTED } from "@/lib/experiments";
 import { FT_RECIPE, FT_RESULTS, FT_RESULTS_NOTE, RECIPE } from "@/lib/ft";
 import { RETRIEVAL } from "@/lib/results";
 
@@ -15,6 +16,9 @@ const STAGES: { n: string; title: string; kind: "data" | "model" | "rule" | "hum
   { n: "7", title: "Automatic QA", kind: "rule", body: "Deterministic checks on the final text: approved terms present, every figure preserved, references and ™/® kept, paragraphs mirrored, no French left, house typography." },
   { n: "8", title: "Human validation", kind: "human", body: "An editor reads French, English and German side by side, paragraph by paragraph, with the terms highlighted in all three, edits in place and validates. The validated text is saved with its source and the system’s version; the share of words the editor changed is the measure of how much work the system saved." },
 ];
+
+const VERDICT_BADGE = { kept: "ok", dropped: "error", open: "warn" } as const;
+const VERDICT_LABEL = { kept: "kept", dropped: "dropped", open: "open" } as const;
 
 const KIND_LABEL = { data: "retrieval", model: "Claude call", rule: "deterministic", human: "editor" } as const;
 const KIND_BADGE = { data: "info", model: "info", rule: "ok", human: "warn" } as const;
@@ -119,6 +123,69 @@ export default function Architecture() {
         </p>
       </section>
 
+      <h2 id="results">Results so far</h2>
+      <p className="muted small" style={{ margin: 0 }}>
+        Measured on held-out passages against GMT’s published translation, November 2026. French → English and French → German only. Automatic
+        scores separate systems that are far apart; gaps of a few tenths of a point need the editors’ blind ratings.
+      </p>
+      <div className="table-wrap panel" style={{ padding: 0 }}>
+        <table>
+          <thead>
+            <tr>
+              <th>Need</th>
+              <th>Best choice today</th>
+              <th>Why</th>
+            </tr>
+          </thead>
+          <tbody>
+            {BEST.map((b) => (
+              <tr key={b.need}>
+                <td>
+                  <b>{b.need}</b>
+                </td>
+                <td>{b.choice}</td>
+                <td>{b.why}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="table-wrap panel" style={{ padding: 0 }}>
+        <table>
+          <thead>
+            <tr>
+              <th>What was tested</th>
+              <th>On</th>
+              <th>Result</th>
+              <th>Decision</th>
+            </tr>
+          </thead>
+          <tbody>
+            {EXPERIMENTS.map((e) => (
+              <tr key={e.component}>
+                <td>
+                  <b>{e.component}</b>
+                </td>
+                <td className="muted">{e.test}</td>
+                <td>{e.result}</td>
+                <td>
+                  <span className={"badge " + VERDICT_BADGE[e.verdict]}>{VERDICT_LABEL[e.verdict]}</span>
+                  <div className="small">{e.decision}</div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="callout">
+        <b>Not tested yet.</b>
+        <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+          {NOT_TESTED.map((x) => (
+            <li key={x}>{x}</li>
+          ))}
+        </ul>
+      </div>
+
       <h2 id="fine-tune">Our fine-tuned open model</h2>
       <p className="muted small" style={{ margin: 0 }}>
         Trained to compare a self-hosted model with the Claude pipeline. In the desk, tick “Compare with our fine-tuned model”: each language gets a
@@ -190,7 +257,7 @@ export default function Architecture() {
           <h3>Examples teach the voice</h3>
           <p>
             Glossaries fix words; examples fix phrasing. For English, 70% of the example budget is reserved for GMT’s editorial translations (press releases
-            excluded), so the model imitates how GMT actually writes. German has no GMT data yet, so it learns from brand sites and the Berner dictionary.
+            excluded), so the model imitates how GMT actually writes. German draws on the GMT Magazine German edition (4.5k pairs), then on brand sites and the Berner dictionary.
           </p>
         </div>
         <div className="card">
