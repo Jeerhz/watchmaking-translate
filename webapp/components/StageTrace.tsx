@@ -30,7 +30,7 @@ export default function StageTrace({ trace, humanShare }: { trace: Trace; humanS
           <span>{kinds.join(" · ") || "draft judged ready"}</span>
         </li>
       )}
-      {edited && (
+      {edited && (trace.diagnosed > 0 || trace.system === "claude-legacy") && (
         <li>
           <b>{trace.system === "claude-legacy" ? "Rewrite" : "Repair"}</b>
           <span>

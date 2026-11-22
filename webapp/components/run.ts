@@ -344,6 +344,7 @@ export async function runLanguage(opts: {
 
         // 3. repair: one replacement per error, applied here and only if QA does not get worse
         if (errors.length) {
+          setStep("diagnose", "done");
           setStep("repair", "active");
           patch((r) => ({ ...r, liveLabel: `Editor is repairing ${errors.length} error(s)` + part, thinking: "" }));
           const rp = await runStep({ step: "repair", ...base, draft, errors, ...origin }, quiet("Repair prompt"), signal);

@@ -233,7 +233,7 @@ details.inspect[open] { display: grid; gap: 10px; }
 details.inspect[open] > summary { margin-bottom: 2px; }
 .cand { border: 1px solid var(--line); padding: 12px 14px; min-width: 0; }
 .cand-text { font-family: var(--font-text); font-size: 16.5px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
-.src-quote { border-left: 3px solid var(--gold); padding-left: 10px; }
+.src-quote { border-left: 3px solid var(--gold); padding-left: 12px; font-family: var(--font-text); font-size: 14.5px; line-height: 1.55; color: var(--ink-2); max-width: 110ch; }
 .mark-bar { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); gap: 8px; }
 mark.err-span { color: inherit; padding: 0 1px; }
 mark.err-span.minor { background: var(--warn-soft); border-bottom: 2px solid var(--warn); }
