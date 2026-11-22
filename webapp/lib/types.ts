@@ -44,10 +44,28 @@ export interface Analysis {
   words: number;
 }
 
+/** MQM-style error categories and severities used by the diagnosing editor and by raters. */
+export type Category = "accuracy" | "terminology" | "style" | "fluency" | "typography";
+export const CATEGORIES: Category[] = ["accuracy", "terminology", "style", "fluency", "typography"];
+export type ErrorSeverity = "minor" | "major" | "critical";
+
+/** One error the editor diagnosed in a draft: a verbatim span, its kind and how bad it is. */
+export interface Diagnosis {
+  span: string;
+  category: Category;
+  severity: ErrorSeverity;
+  explanation: string;
+}
+
 export interface Change {
   before: string;
   after: string;
   reason: string;
+  /** set by the diagnose → repair editor */
+  type?: Category;
+  severity?: ErrorSeverity;
+  /** why the desk refused to apply this edit (span not found, or it made QA worse) */
+  rejected?: string;
 }
 
 export interface Verdict {
@@ -73,19 +91,48 @@ export type StreamEvent =
   | { t: "done"; text: string; usage: Usage; stop: string | null }
   | { t: "error"; message: string };
 
-export type Step = "draft" | "review" | "fix";
+/** draft → diagnose → repair is the pipeline; review / fix are the previous single-pass editor, kept for comparison. */
+export type Step = "draft" | "diagnose" | "repair" | "review" | "fix";
+
+/** Components that can be switched off for one run, to measure what each contributes. */
+export type Off = "termbase" | "examples" | "style";
+
+export interface Decision {
+  fr: string;
+  tgt: string;
+}
 
 export interface TranslateRequest {
   step: Step;
   lang: Lang;
   source: string;
+  /** end of the translation so far (previous parts of the same article) */
   context?: string | null;
+  /** the whole French article, when the source is only a part of it */
+  article?: string | null;
+  /** term choices already made earlier in this article — to be reused */
+  decisions?: Decision[];
   draft?: string;
+  /** QA flags: questions for the editor (diagnose, fix) */
   issues?: string[];
+  /** repair: the errors diagnosed in the draft */
+  errors?: Diagnosis[];
   swiss?: boolean;
   effort?: Effort;
-  /** review: the engine that produced the draft when it is not Claude (e.g. "DeepL") */
+  /** termbase keys pruned as irrelevant for this text */
+  dropTerms?: string[];
+  off?: Off[];
+  /** the engine that produced the draft when it is not Claude (e.g. "DeepL") */
   draftBy?: string;
-  /** review: other engines' translations of the same source, for the editor to borrow from */
+  /** other engines' translations of the same source, for the editor to borrow from */
   alternatives?: { engine: string; text: string }[];
+}
+
+/** One event in the shared store (ratings, validated texts, run statistics). */
+export type StoreKind = "run" | "validation" | "judgment";
+export interface StoreEvent {
+  id: string;
+  kind: StoreKind;
+  at: string;
+  [k: string]: unknown;
 }

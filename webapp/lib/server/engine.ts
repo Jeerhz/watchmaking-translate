@@ -140,22 +140,57 @@ export function findTerms(text: string, lang: Lang | null, limit = 150): TermHit
     .slice(0, limit);
 }
 
-/** Per-sentence retrieval with de-duplication and a per-document budget (memory.py). */
+/** Content unigrams and bigrams of a sentence: what an example can "cover". */
+function grams(text: string, stop: Set<string>): Set<string> {
+  const t = contentTokens(text, stop);
+  const out = new Set(t);
+  for (let i = 0; i + 1 < t.length; i++) out.add(t[i] + " " + t[i + 1]);
+  return out;
+}
+
+const FLOOR = 0.4; // an example scoring under 40 % of the sentence's best match is noise, not help
+const COVERED = 0.1; // weight left on an n-gram once a chosen example already shows it
+
+/** Per-sentence retrieval with de-duplication and a per-document budget.
+ *  BM25 proposes; the pick is by coverage (R-BM25, Agrawal et al. 2023): each next example is
+ *  the one showing most of the sentence's words and word pairs that the examples chosen so far
+ *  do not show yet, so three examples teach three things instead of the same thing three times.
+ *  (trad_gmt/mt/memory.py still takes the plain BM25 top-k.) */
 export function retrieve(sentences: string[], lang: Lang, budget = 40): Example[] {
   const { memory, stop, bundle } = getEngine();
   const seen = new Set<string>();
   let picked: Example[] = [];
   sentences.forEach((q, si) => {
+    const want = grams(q, stop);
     for (const [pool, k] of Object.entries(bundle.per_sentence[lang])) {
       const idx = memory[lang][pool];
-      let added = 0;
-      for (const [d, score] of idx.search(q, stop, k * 3)) {
-        const [fr, tgt, source, label, url] = idx.rows[d];
+      const found = idx.search(q, stop, k * 8);
+      const top = found[0]?.[1] ?? 0;
+      const cands = found
+        .filter(([, score]) => score >= top * FLOOR)
+        .map(([d, score]) => ({ d, score, g: [...grams(idx.rows[d][0], stop)].filter((x) => want.has(x)) }))
+        .filter((c) => !seen.has(idx.rows[c.d][0].toLowerCase()));
+      const weight = new Map<string, number>([...want].map((g) => [g, 1]));
+      for (let n = 0; n < k && cands.length; n++) {
+        let best = 0;
+        let bestGain = -1;
+        cands.forEach((c, i) => {
+          const gain = c.g.reduce((s, g) => s + (weight.get(g) ?? 0), 0);
+          if (gain > bestGain + 1e-9) {
+            best = i;
+            bestGain = gain; // ties keep the higher BM25 score (cands are in score order)
+          }
+        });
+        const [c] = cands.splice(best, 1);
+        for (const g of c.g) weight.set(g, (weight.get(g) ?? 0) * COVERED);
+        const [fr, tgt, source, label, url] = idx.rows[c.d];
         const key = fr.toLowerCase();
-        if (seen.has(key)) continue;
+        if (seen.has(key)) {
+          n--;
+          continue;
+        }
         seen.add(key);
-        picked.push({ fr, tgt, source, label, url, pool: pool as Example["pool"], score: Math.round(score * 100) / 100, sentence: si });
-        if (++added === k) break;
+        picked.push({ fr, tgt, source, label, url, pool: pool as Example["pool"], score: Math.round(c.score * 100) / 100, sentence: si });
       }
     }
   });

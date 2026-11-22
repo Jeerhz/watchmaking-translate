@@ -1,6 +1,6 @@
 // Browser helpers: the NDJSON step stream, a word diff and the cost estimate.
 
-import type { Lang, StreamEvent, TranslateRequest, Usage } from "./types";
+import type { Lang, StoreKind, StreamEvent, TranslateRequest, Usage } from "./types";
 
 export class AccessError extends Error {}
 
@@ -33,6 +33,58 @@ export function runDeepL(
   signal: AbortSignal,
 ): Promise<StepResult> {
   return streamStep("/api/deepl", req, on, signal);
+}
+
+/** Record one event (run statistics, a validated text, a blind judgment) in the shared store.
+ *  Returns false when the store is not configured or unreachable — callers keep a local copy. */
+export async function saveEvent(kind: StoreKind, payload: Record<string, unknown>): Promise<boolean> {
+  try {
+    const res = await fetch("/api/store", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ kind, ...payload }), keepalive: true });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Fire-and-forget variant for statistics nobody waits on. */
+export function logEvent(kind: StoreKind, payload: Record<string, unknown>): void {
+  void saveEvent(kind, payload);
+}
+
+export interface Pruned {
+  drop: { key: string; surface: string; reason: string }[];
+  usage: Usage | null;
+  system: string;
+  user: string;
+  error?: string;
+}
+
+/** Ask Claude which termbase matches are ordinary words in this text (/api/terms). */
+export async function pruneTerms(text: string, signal: AbortSignal): Promise<Pruned> {
+  const none: Pruned = { drop: [], usage: null, system: "", user: "" };
+  try {
+    const res = await fetch("/api/terms", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }), signal });
+    if (res.status === 401) throw new AccessError("access code required");
+    return res.ok ? ((await res.json()) as Pruned) : none;
+  } catch (err) {
+    if (err instanceof AccessError || signal.aborted) throw err;
+    return none;
+  }
+}
+
+const NAME_KEY = "gmt-desk-name";
+/** The editor's name, typed once and remembered in this browser. */
+export function rememberedName(): string {
+  try {
+    return localStorage.getItem(NAME_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+export function rememberName(name: string): void {
+  try {
+    localStorage.setItem(NAME_KEY, name.trim());
+  } catch {}
 }
 
 async function streamStep(path: string, req: object, on: StreamHandlers, signal: AbortSignal): Promise<StepResult> {

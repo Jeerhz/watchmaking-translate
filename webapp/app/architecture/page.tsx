@@ -7,12 +7,13 @@ export const metadata: Metadata = { title: "Architecture — GMT Translation Des
 
 const STAGES: { n: string; title: string; kind: "data" | "model" | "rule" | "human"; body: string }[] = [
   { n: "1", title: "Term detection", kind: "rule", body: "Longest-match lookup of 4,932 French keys in the merged termbase; returns every approved EN/DE equivalent ranked by authority." },
-  { n: "2", title: "Reference retrieval", kind: "data", body: "BM25 over the French side of the translation memory, sentence by sentence: 2 GMT + 1 industry example per sentence for English, 3 industry examples for German." },
-  { n: "3", title: "Translator draft", kind: "model", body: "Claude Opus 5.5 with the house style guide, the glossary block, the examples and the previous paragraphs as context." },
-  { n: "4", title: "Editorial review", kind: "model", body: "A second call plays GMT’s chief sub-editor: checks accuracy, terminology, house style and fluency, and returns the final text plus every change with its reason (strict JSON)." },
-  { n: "5", title: "Automatic QA", kind: "rule", body: "Deterministic checks: approved terms present, every figure preserved, references and ™/® kept, paragraphs mirrored, no French left, house typography." },
-  { n: "6", title: "Correction", kind: "model", body: "Only when QA flags something: the editor rules on each flag — fix it with the smallest edit, or keep the text and explain the false alarm." },
-  { n: "7", title: "Human validation", kind: "human", body: "An editor reads the diff, edits in place (QA re-runs on the edits), and validates. The job record keeps every intermediate state." },
+  { n: "2", title: "Term pruning", kind: "model", body: "A string match also catches ordinary words (“approche”, “soleil”, “nuit” in “bleu nuit”). One short Claude call removes the matches that are not used in their watchmaking sense in this text, before any prompt or check uses them. When in doubt the term is kept." },
+  { n: "3", title: "Reference retrieval", kind: "data", body: "BM25 over the French side of the translation memory proposes candidates for each sentence; the pick is by coverage: each next example is the one showing most of the sentence’s words and word pairs that the examples already chosen do not show. Weak matches (under 40 % of the best score) are dropped." },
+  { n: "4", title: "Draft", kind: "model", body: "Claude Opus 5.5 with the house style guide, the pruned glossary and the examples. For a long article each part also receives the whole French article, the translation so far, and the term choices already made, so names and terms stay consistent. Or DeepL drafts, reading the paragraphs around the one it translates." },
+  { n: "5", title: "Diagnosis", kind: "model", body: "The editor does not rewrite. It lists the draft’s errors as verbatim spans, each with a kind (accuracy, terminology, style, fluency, typography) and a severity (minor, major, critical), and rules on every flag the automatic checks raised on the draft." },
+  { n: "6", title: "Repair", kind: "model", body: "One replacement per diagnosed error. The desk applies the replacements itself: an edit whose wording is not in the draft exactly once is refused, and so is an edit that fails an automatic check the draft passed. Nothing outside a diagnosed span can change." },
+  { n: "7", title: "Automatic QA", kind: "rule", body: "Deterministic checks on the final text: approved terms present, every figure preserved, references and ™/® kept, paragraphs mirrored, no French left, house typography." },
+  { n: "8", title: "Human validation", kind: "human", body: "An editor reads French, English and German side by side, paragraph by paragraph, with the terms highlighted in all three, edits in place and validates. The validated text is saved with its source and the system’s version; the share of words the editor changed is the measure of how much work the system saved." },
 ];
 
 const KIND_LABEL = { data: "retrieval", model: "Claude call", rule: "deterministic", human: "editor" } as const;
@@ -113,8 +114,8 @@ export default function Architecture() {
           ))}
         </ol>
         <p className="muted small" style={{ margin: 0 }}>
-          Steps 1–2 run in ~100 ms with no model call (you see them update as you type). English and German run in parallel; texts over ~1,200 words
-          are split by paragraph and each part receives the end of the previous translated part as context.
+          Steps 1 and 3 run in ~100 ms with no model call (you see them update as you type). English and German run in parallel; texts over ~1,200
+          words are split by paragraph. Every run records what each stage did (numbers only), which feeds the Scoreboard.
         </p>
       </section>
 
@@ -193,17 +194,19 @@ export default function Architecture() {
           </p>
         </div>
         <div className="card">
-          <h3>Two passes, two roles</h3>
+          <h3>Diagnose, then repair</h3>
           <p>
-            Translating and editing are different jobs. The reviewer sees the source, the draft and the same evidence, and must justify each change — which
-            makes its work auditable and lets us measure how much it edits.
+            An editor asked to “improve” a draft rewrites sentences that were right. Ours first names each error, with its kind and severity, then
+            changes only those spans (Diagnose, Then Repair, ACL 2026; MQM-APE; TEaR). The desk applies the edits and refuses any that touches other
+            text or fails a check. We did not add more agent roles: a 2025 replication found multi-step “human-like” workflows gain nothing from the
+            decomposition itself.
           </p>
         </div>
         <div className="card">
           <h3>Rules where rules work</h3>
           <p>
             Figures, references, paragraph structure and approved terms are checked by code, not by the model. The checks are deliberately strict; the
-            correction pass lets the editor overrule false alarms (a German compound, an intentional synonym) and says why.
+            editor rules on each flag (a German compound or an intentional synonym is a false alarm) and says why.
           </p>
         </div>
         <div className="card">
@@ -214,10 +217,11 @@ export default function Architecture() {
           </p>
         </div>
         <div className="card">
-          <h3>Same prompts everywhere</h3>
+          <h3>Judged by editors, not by one metric</h3>
           <p>
-            The prompt templates, style guides and glossary live in the Python package (<span className="mono">trad_gmt.mt</span>) and are exported into
-            this app, so the batch CLI, the evaluation harness and the desk send identical instructions.
+            Systems tuned to an automatic metric top that metric and then fall in human evaluation (WMT 2024 and 2025). So each component has an off
+            switch on the Compare page, raters mark error spans blind, and the Scoreboard pairs every “with” against its “without”. A drop in
+            word overlap after editing is not read as a loss.
           </p>
         </div>
       </div>
@@ -301,7 +305,8 @@ export default function Architecture() {
         <div className="card">
           <h3>This desk</h3>
           <ul>
-            <li>Next.js on Vercel; one serverless route per step (analyse, draft, review, correct), streamed to the browser.</li>
+            <li>Next.js on Vercel; one serverless route per step (analyse, prune, draft, diagnose, repair), streamed to the browser.</li>
+            <li>Ratings, validated texts and run statistics are kept in a private Vercel Blob store on GMT’s own Vercel team (Paris region).</li>
             <li>Termbase + BM25 index built in memory from a 20 MB bundle on cold start (~1 s), then reused.</li>
             <li>Claude API key held as a Vercel secret; the site sits behind an access code.</li>
           </ul>
@@ -310,7 +315,7 @@ export default function Architecture() {
           <h3>Batch / production</h3>
           <ul>
             <li>
-              <span className="mono">uv run trad-gmt translate</span> — same prompts, full memory, effort <i>xhigh</i>.
+              <span className="mono">uv run trad-gmt translate</span> — full memory, effort <i>xhigh</i>; still the previous single-pass editor.
             </li>
             <li>
               <span className="mono">uv run trad-gmt evaluate</span> — chrF vs GMT’s published translations + term adherence on held-out articles.

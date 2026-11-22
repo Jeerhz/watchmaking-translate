@@ -27,26 +27,71 @@ function norm(text: string): string {
   return text.toLocaleLowerCase().replace(/ß/g, "ss").replace(/[‐‑–—-]/g, " ").replace(/[’']/g, "'").replace(/\s+/g, " ");
 }
 
-function words(text: string): string[] {
-  return norm(text).match(/[\p{L}\p{N}']+/gu) ?? [];
+interface Tok {
+  w: string;
+  s: number;
+  e: number;
 }
 
-/** Inflection- and compound-tolerant containment of a (multi-word) term in a token list. */
-function containsTerm(out: string[], term: string): boolean {
+/** Normalised word tokens with their offsets in the original text. */
+function toks(text: string): Tok[] {
+  return [...text.matchAll(/[\p{L}\p{N}'’]+/gu)].map((m) => ({ w: norm(m[0]), s: m.index, e: m.index + m[0].length }));
+}
+
+function words(text: string): string[] {
+  return toks(text).map((t) => t.w);
+}
+
+/** Inflection- and compound-tolerant search of a (multi-word) term: every [start, end) match. */
+function termSpans(out: Tok[], term: string): [number, number][] {
   const t = words(term);
-  if (!t.length) return false;
+  const found: [number, number][] = [];
+  if (!t.length) return found;
   const stemOf = (w: string) => (w.length >= 6 ? w.slice(0, w.length - 2) : w);
   for (let i = 0; i + t.length <= out.length; i++) {
     let ok = true;
     for (let j = 0; j < t.length && ok; j++) {
-      const o = out[i + j];
-      const s = stemOf(t[j]);
+      const o = out[i + j].w;
+      const st = stemOf(t[j]);
       // the last word may be the head of a German compound (Automatikkaliber ⊃ kaliber)
-      ok = j === t.length - 1 ? o.includes(s) : o.startsWith(s);
+      ok = j === t.length - 1 ? o.includes(st) : o.startsWith(st);
     }
-    if (ok) return true;
+    if (ok) found.push([out[i].s, out[i + t.length - 1].e]);
   }
-  return false;
+  return found;
+}
+
+function containsTerm(out: Tok[], term: string): boolean {
+  return termSpans(out, term).length > 0;
+}
+
+/** Is this termbase hit one the checks enforce? Multi-word terms, and single words with a GMT
+ *  house-usage rule (other single words are often ordinary French: "bleu nuit"). */
+export function enforced(h: TermHit, lang: Lang): boolean {
+  const targets = h[lang];
+  return targets.length > 0 && (h.key.includes(" ") || targets[0][2] <= 0);
+}
+
+export interface TermUse {
+  hit: TermHit;
+  /** preferred = first equivalent used · variant = another listed equivalent · missing = none found */
+  status: "preferred" | "variant" | "missing";
+  target: string | null;
+  spans: [number, number][];
+}
+
+/** How each termbase hit is rendered in a translation, with the offsets of the rendering. */
+export function termUsage(output: string, lang: Lang, terms: TermHit[]): TermUse[] {
+  const out = toks(output);
+  return terms
+    .filter((h) => h[lang].length)
+    .map((h) => {
+      for (const [i, t] of h[lang].entries()) {
+        const spans = termSpans(out, t[0]);
+        if (spans.length) return { hit: h, status: i === 0 ? ("preferred" as const) : ("variant" as const), target: t[0], spans };
+      }
+      return { hit: h, status: "missing" as const, target: null, spans: [] };
+    });
 }
 
 const NUMBER = /\d{1,3}(?:[\s  '’.,](?=\d{3}\b)\d{3})+(?:[.,]\d+)?|\d+(?:[.,]\d+)?/g;
@@ -81,15 +126,14 @@ const TYPO: Record<Lang, [RegExp, string][]> = {
 
 export function runQA(source: string, output: string, lang: Lang, terms: TermHit[], swiss = false): QACheck[] {
   const checks: QACheck[] = [];
-  const outWords = words(output);
+  const outWords = toks(output);
 
   // 1. terminology — multi-word terms, and single words with a GMT house-usage rule (other
   //    single words are often ordinary French: "bleu nuit", "équilibre la composition")
   for (const h of terms) {
     const targets = h[lang];
     if (!targets.length) continue;
-    const multi = h.key.includes(" ");
-    if (!multi && targets[0][2] > 0) continue;
+    if (!enforced(h, lang)) continue;
     const used = targets.findIndex((t) => containsTerm(outWords, t[0]));
     const pref = targets[0];
     const prefLabel = `“${pref[0]}” (${SOURCE_LABEL[pref[1]] ?? pref[1]})`;

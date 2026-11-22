@@ -100,11 +100,22 @@ function References({ a, sentence }: { a: Analysis; sentence: number | null }) {
   );
 }
 
-function Terms({ terms }: { terms: TermHit[] }) {
+function Terms({ terms, dropped }: { terms: TermHit[]; dropped: Dropped[] }) {
   if (!terms.length) return <p className="muted small">No termbase entry in this text yet.</p>;
+  const why = new Map(dropped.map((d) => [d.key, d.reason]));
+  const kept = terms.filter((h) => !why.has(h.key));
   return (
     <ul className="term-list">
-      {terms.map((h) => (
+      {terms
+        .filter((h) => why.has(h.key))
+        .map((h) => (
+          <li key={h.key} className="term pruned">
+            <div className="fr">
+              <s>{h.surface}</s> <span className="muted small">left out — {why.get(h.key)}</span>
+            </div>
+          </li>
+        ))}
+      {kept.map((h) => (
         <li key={h.key} className="term">
           <div className="fr">
             {h.surface}
@@ -135,28 +146,47 @@ function Terms({ terms }: { terms: TermHit[] }) {
   );
 }
 
-export default function AnalysisPanel({ text, analysis, loading }: { text: string; analysis: Analysis | null; loading: boolean }) {
+export interface Dropped {
+  key: string;
+  surface: string;
+  reason: string;
+}
+
+export default function AnalysisPanel({
+  text,
+  analysis,
+  loading,
+  dropped = [],
+  stats,
+}: {
+  text: string;
+  analysis: Analysis | null;
+  loading: boolean;
+  dropped?: Dropped[];
+  stats?: string;
+}) {
   const [tab, setTab] = useState<"annotated" | "terms" | "refs">("annotated");
   const [sentence, setSentence] = useState<number | null>(null);
-  const a = analysis;
+  const gone = new Set(dropped.map((d) => d.key));
+  const a = analysis ? { ...analysis, terms: analysis.terms.filter((h) => !gone.has(h.key)) } : null;
   const nRefs = a ? a.references.en.length + a.references.de.length : 0;
   const sel = a && sentence !== null && sentence < a.sentences.length ? sentence : null;
   return (
     <section className="panel" aria-labelledby="anaLabel">
       <div className="panel-head">
         <span className="label" id="anaLabel">
-          Evidence — found before any model call
+          Terms &amp; references
         </span>
         <span className="muted small">
-          {loading ? "Analysing…" : a ? `${a.terms.length} terms · ${nRefs} reference sentences · ${a.sentences.length} sentences` : ""}
+          {loading ? "Analysing…" : a ? `${a.terms.length} terms${dropped.length ? ` (${dropped.length} pruned)` : ""} · ${nRefs} references` : (stats ?? "")}
         </span>
       </div>
       <div className="tabs" role="tablist">
         {(
           [
             ["annotated", "Annotated source", null],
-            ["terms", "Technical terms", a?.terms.length ?? 0],
-            ["refs", "All references", nRefs],
+            ["terms", "Terms", a?.terms.length ?? 0],
+            ["refs", "References", nRefs],
           ] as const
         ).map(([id, label, n]) => (
           <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)}>
@@ -170,15 +200,14 @@ export default function AnalysisPanel({ text, analysis, loading }: { text: strin
       ) : tab === "annotated" ? (
         <>
           <p className="muted small" style={{ margin: 0 }}>
-            <mark className="term">Gold</mark> = termbase hit (hover for the approved EN/DE equivalents). Click a sentence to see the published
-            sentences retrieved for it.
+            <mark className="term">Gold</mark> = termbase term (hover for its equivalents). Click a sentence to see its reference sentences.
           </p>
           <Annotated text={text} a={a} selected={sel} onSelect={(i) => setSentence(i === sel ? null : i)} />
           <div className="label">{sel === null ? "Pick a sentence above to inspect its references" : `References retrieved for sentence ${sel + 1}`}</div>
           {sel !== null && <References a={a} sentence={sel} />}
         </>
       ) : tab === "terms" ? (
-        <Terms terms={a.terms} />
+        <Terms terms={analysis?.terms ?? []} dropped={dropped} />
       ) : (
         <div style={{ maxHeight: 520, overflow: "auto" }}>
           <References a={a} sentence={null} />

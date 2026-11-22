@@ -77,7 +77,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .site-footer b { color: #ffffff; font-weight: bold; }
 .site-footer a { color: var(--footer-ink); }
 .site-footer a:hover { color: var(--gold); }
-.page { max-width: 1440px; margin: 0 auto; padding: 24px 16px 40px; display: grid; gap: 18px; }
+.page { max-width: 1440px; margin: 0 auto; padding: 28px 16px 48px; display: grid; gap: 20px; align-content: start; }
 .prose-page { max-width: 1040px; }
 h1, h2, h3 { font-family: var(--font-text); font-weight: 600; letter-spacing: var(--track); text-wrap: balance; margin: 0; }
 h1::after { content: ""; display: block; width: 56px; height: 2px; background: var(--gold); margin-top: 12px; }
@@ -185,6 +185,60 @@ textarea.final { width: 100%; min-height: 280px; resize: vertical; border: 1px s
 .stat span { font-size: 12px; color: var(--muted); }
 .validated { border: 1px solid var(--ok); background: var(--ok-soft); color: var(--ok); border-radius: 0; padding: 8px 12px; font-size: 14px; }
 
+/* ---------- form controls in the house look: square, hairline, gold accent ---------- */
+:root { accent-color: var(--gold-ink); }
+select, input[type="text"], input:not([type]) {
+  border: 1px solid var(--line); border-radius: 0; background: var(--panel); padding: 6px 10px; font-size: 14px; letter-spacing: 0.3px; min-height: 34px;
+}
+select { padding-right: 28px; appearance: none; -webkit-appearance: none; cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 15px) 55%, calc(100% - 10px) 55%; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; }
+select:hover, input[type="text"]:hover, input:not([type]):hover { border-color: var(--gold); }
+select:disabled, input:disabled { opacity: 0.55; cursor: not-allowed; }
+input[type="range"] { accent-color: var(--gold); height: 22px; }
+input[type="checkbox"], input[type="radio"] { width: 15px; height: 15px; margin: 0; }
+.check { color: var(--ink-2); letter-spacing: 0.3px; }
+.seg button { letter-spacing: 0.5px; padding: 7px 14px; min-height: 34px; }
+.seg button:not([aria-pressed="true"]):not(:disabled):hover { color: var(--gold-ink); }
+.btn.ghost[aria-pressed="true"] { border-color: var(--gold); background: var(--gold-soft); }
+td input[type="text"] { min-height: 30px; padding: 4px 8px; }
+
+/* ---------- paragraph-aligned grid, term checks, stage trace ---------- */
+h1.page-title { font-size: 1.35rem; }
+h1.page-title::after { margin-top: 8px; width: 40px; }
+input.name { width: 160px; }
+.aligned { display: grid; gap: 0; }
+.aligned-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 20px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.aligned-row.head { padding: 0 0 8px; border-bottom: 1px solid var(--ink); }
+.aligned-row:last-of-type { border-bottom: 0; }
+.aligned .cell { font-family: var(--font-text); font-size: 16.5px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+.aligned .cell.src { color: var(--ink-2); }
+.aligned > p { padding-top: 10px; }
+textarea.cell-edit { width: 100%; field-sizing: content; resize: vertical; border: 1px solid var(--gold); padding: 8px 10px; font-family: var(--font-text); font-size: 16.5px; line-height: 1.6; background: var(--panel-2); }
+@media (max-width: 860px) {
+  .aligned-row { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .aligned-row.head { display: none; }
+  .aligned .cell.src { font-size: 14.5px; color: var(--muted); border-left: 3px solid var(--gold); padding-left: 10px; }
+}
+mark.term.ok { background: var(--ok-soft); border-bottom-color: var(--ok); }
+mark.term.alt { background: var(--warn-soft); border-bottom-color: var(--warn); }
+mark.term.miss { background: var(--err-soft); border-bottom-color: var(--err); }
+.term-list .term.pruned { border-left-color: var(--line); background: transparent; padding: 2px 10px; }
+.trace { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 6px; }
+.trace li { background: var(--card); padding: 8px 10px; display: grid; gap: 1px; align-content: start; font-size: 12.5px; color: var(--muted); border-top: 2px solid var(--line); }
+.trace li b { font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted); }
+.trace li span:first-of-type { font-size: 14px; font-weight: 600; color: var(--ink); }
+.trace li.human { border-top-color: var(--gold); }
+details.inspect[open] { display: grid; gap: 10px; }
+details.inspect[open] > summary { margin-bottom: 2px; }
+.cand { border: 1px solid var(--line); padding: 12px 14px; min-width: 0; }
+.cand-text { font-family: var(--font-text); font-size: 16.5px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.src-quote { border-left: 3px solid var(--gold); padding-left: 10px; }
+.mark-bar { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); gap: 8px; }
+mark.err-span { color: inherit; padding: 0 1px; }
+mark.err-span.minor { background: var(--warn-soft); border-bottom: 2px solid var(--warn); }
+mark.err-span.major { background: var(--err-soft); border-bottom: 2px solid var(--err); }
+
 /* ---------- explainer pages ---------- */
 .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
 .card { background: var(--card); border: 0; border-radius: 0; padding: 14px 16px; display: grid; gap: 6px; align-content: start; }
@@ -201,7 +255,7 @@ textarea.final { width: 100%; min-height: 280px; resize: vertical; border: 1px s
 .phase { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
 @media (max-width: 640px) { .phase { grid-template-columns: minmax(0, 1fr); } }
 .login { max-width: 380px; margin: 12vh auto; }
-.login input { width: 100%; padding: 9px 12px; border-radius: 0; border: 1px solid var(--line); background: var(--panel-2); }
+.login input { width: 100%; padding: 9px 12px; border-radius: 0; border: 1px solid var(--line); background: var(--panel-2); min-height: 0; }
 
 /* GMT's logo is black on transparent: invert it on dark surfaces */
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .gmt-logo { filter: invert(1); } }

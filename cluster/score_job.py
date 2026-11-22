@@ -3,6 +3,7 @@
 # dependencies = [
 #   "unbabel-comet>=2.2",
 #   "sacrebleu",
+#   "simplemma",
 #   "setuptools<81",
 #   "huggingface_hub>=1.0",
 # ]
@@ -10,7 +11,7 @@
 """Score every system's test outputs (ft/<version>/runs/<system>/test.ft.jsonl) on HF Jobs.
 
   hf jobs uv run --flavor l4x1 --timeout 1h --secrets HF_TOKEN -v ./cluster:/code \\
-      cluster/score_job.py ft-e4b-v2 base-e4b ... [--common]
+      cluster/score_job.py ft-e4b-v2 base-e4b ... [--metrics comet22,metricx24,xcomet]
 
 Writes scores.json (all passages) and, with several systems, scores.common.json (passages
 every system translated), next to the runs in the dataset repo.
@@ -32,15 +33,18 @@ def main() -> None:
     ap.add_argument("--data", default="ft/v2")
     ap.add_argument("--code", default="/code")
     ap.add_argument("--name", default="scores")
+    ap.add_argument("--metrics", default="comet22", help="passed to score.py")
     args = ap.parse_args()
 
-    pats = [f"{args.data}/test.jsonl", *(f"{args.data}/runs/{s}/test.ft.jsonl" for s in args.systems)]
+    runs = [f"{args.data}/runs/{s}/test.ft.jsonl" for s in args.systems]
+    pats = [f"{args.data}/test.jsonl", *runs]
     root = Path(snapshot_download(DATASET, repo_type="dataset", allow_patterns=pats)) / args.data
     specs = [f"{s}={root / 'runs' / s / 'test.ft.jsonl'}" for s in args.systems]
     api = HfApi()
     for common in ([False, True] if len(specs) > 1 else [False]):
         out = Path(f"/tmp/{args.name}{'.common' if common else ''}.json")
-        cmd = [sys.executable, f"{args.code}/score.py", "--test", str(root / "test.jsonl"), "--out", str(out)]
+        cmd = [sys.executable, f"{args.code}/score.py", "--test", str(root / "test.jsonl")]
+        cmd += ["--out", str(out), "--metrics", args.metrics]
         cmd += [x for s in specs for x in ("--sys", s)] + (["--common"] if common else [])
         print("+", " ".join(cmd), flush=True)
         subprocess.run(cmd, check=True)

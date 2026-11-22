@@ -1,30 +1,23 @@
 "use client";
 
-// Side-by-side, optionally blind, comparison of the translation systems on the same French text,
-// with human ratings kept in this browser and exportable as CSV.
+// Blind side-by-side comparison of systems — and of one system with a component switched off —
+// on the same French text. Raters mark error spans (minor / major) and give a 0–100 score
+// (Error Span Annotation, WMT 2024); judgments go to the shared store and feed the scoreboard.
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { cost } from "@/lib/client";
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+import { CANDIDATES, type Candidate, type Judgment, type Span } from "@/lib/candidates";
+import { cost, pruneTerms, rememberedName, rememberName, saveEvent } from "@/lib/client";
 import { runQA, summarize } from "@/lib/qa";
 import { splitParagraphs } from "@/lib/textnorm";
 import type { Analysis, Effort, Lang, TermHit } from "@/lib/types";
-import { emptyOpen, emptyRun, runLanguage, runOpenLanguage, type LangRun, type OpenRun, type Pipeline } from "./run";
+import { marked, paragraphOffsets, type Mark } from "./marks";
+import { emptyRun, runLanguage, type LangRun } from "./run";
 
-type SystemId = "claude" | "deepl-claude" | "fusion" | "deepl" | "open" | "gmt";
-type Kind = "pipeline" | "deepl" | "open" | "gmt";
-
-const SYSTEMS: { id: SystemId; label: string; kind: Kind; help: string }[] = [
-  { id: "claude", label: "Claude (draft + editor)", kind: "pipeline", help: "Claude drafts with GMT examples and terms; Claude’s sub-editor reviews; QA; correction" },
-  { id: "deepl-claude", label: "DeepL → Claude editor", kind: "pipeline", help: "DeepL drafts (GMT glossary, house style, context); Claude’s sub-editor edits into GMT style" },
-  { id: "fusion", label: "Claude + DeepL fusion", kind: "pipeline", help: "Both draft; the sub-editor reviews Claude’s draft with DeepL’s beside it and keeps the best wording" },
-  { id: "deepl", label: "DeepL alone", kind: "deepl", help: "DeepL with GMT glossary, house style and context — no review" },
-  { id: "open", label: "Fine-tuned Gemma alone", kind: "open", help: "Our fine-tuned open model, one pass, termbase hints — no review" },
-  { id: "gmt", label: "GMT’s published translation", kind: "gmt", help: "What GMT Magazine printed (samples only) — the human reference, hidden among the systems" },
-];
-const LABEL = Object.fromEntries(SYSTEMS.map((s) => [s.id, s.label])) as Record<SystemId, string>;
-const KIND = Object.fromEntries(SYSTEMS.map((s) => [s.id, s.kind])) as Record<SystemId, Kind>;
+const BY_ID = Object.fromEntries(CANDIDATES.map((c) => [c.id, c])) as Record<string, Candidate>;
 const LANG_TITLE: Record<Lang, string> = { en: "English", de: "Deutsch" };
-const STORE = "gmt-judgments-v1";
+const LOCAL = "gmt-judgments-unsent";
+const LANGS: Lang[] = ["en", "de"];
 
 interface Sample {
   id: string;
@@ -34,25 +27,12 @@ interface Sample {
   de: string;
 }
 
-interface Cand {
-  status: "idle" | "running" | "done" | "error" | "stopped";
-  text: string;
-  live: string;
-  ms: number;
-  usd: number;
-  deeplChars: number;
-  error?: string;
+interface Rating {
+  score: number | null;
+  spans: Span[];
+  note: string;
 }
-
-interface Judgment {
-  saved: string;
-  sample: string | null;
-  lang: Lang;
-  blind: boolean;
-  source: string;
-  best: SystemId | null;
-  candidates: { label: string; system: SystemId; text: string; rating: number | null; note: string }[];
-}
+const NO_RATING: Rating = { score: null, spans: [], note: "" };
 
 const letter = (i: number) => String.fromCharCode(65 + i);
 
@@ -65,17 +45,14 @@ function shuffle<T>(xs: T[]): T[] {
   return a;
 }
 
-function loadHistory(): Judgment[] {
-  try {
-    return JSON.parse(localStorage.getItem(STORE) ?? "[]") as Judgment[];
-  } catch {
-    return [];
-  }
-}
-
-function csvCell(v: unknown): string {
-  const s = v === null || v === undefined ? "" : String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+/** Run tasks a few at a time: many Claude pipelines at once hit the API's rate limit. */
+async function pool(tasks: (() => Promise<void>)[], size: number): Promise<void> {
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(size, tasks.length) }, async () => {
+      while (next < tasks.length) await tasks[next++]().catch(() => undefined);
+    }),
+  );
 }
 
 export default function Compare() {
@@ -83,47 +60,43 @@ export default function Compare() {
   const [samples, setSamples] = useState<Sample[]>([]);
   const [sample, setSample] = useState<Sample | null>(null);
   const [langs, setLangs] = useState<Record<Lang, boolean>>({ en: true, de: true });
-  const [chosen, setChosen] = useState<Record<SystemId, boolean>>({
-    claude: true,
-    "deepl-claude": true,
-    fusion: true,
-    deepl: true,
-    open: false,
-    gmt: true,
-  });
+  const [chosen, setChosen] = useState<Record<string, boolean>>({ claude: true, "deepl-claude": true, deepl: true, gmt: true });
   const [effort, setEffort] = useState<Effort>("high");
   const [swiss, setSwiss] = useState(true);
   const [blind, setBlind] = useState(true);
-  const [available, setAvailable] = useState<{ deepl: boolean; open: boolean }>({ deepl: false, open: false });
+  const [rater, setRater] = useState("");
+  const [have, setHave] = useState<{ deepl: boolean; open: boolean }>({ deepl: false, open: false });
 
   const [runSrc, setRunSrc] = useState<{ text: string; sample: Sample | null; langs: Lang[]; terms: TermHit[] } | null>(null);
-  const [order, setOrder] = useState<Record<Lang, SystemId[]>>({ en: [], de: [] });
-  const [pipes, setPipes] = useState<Record<string, LangRun>>({});
-  const [singles, setSingles] = useState<Record<string, OpenRun>>({});
-  const [ratings, setRatings] = useState<Record<string, { rating: number | null; note: string }>>({});
-  const [best, setBest] = useState<Record<Lang, SystemId | null>>({ en: null, de: null });
+  const [order, setOrder] = useState<Record<Lang, string[]>>({ en: [], de: [] });
+  const [runs, setRuns] = useState<Record<string, LangRun>>({});
+  const [ratings, setRatings] = useState<Record<string, Rating>>({});
+  const [best, setBest] = useState<Record<Lang, string | null>>({ en: null, de: null });
   const [revealed, setRevealed] = useState<Record<Lang, boolean>>({ en: false, de: false });
-  const [saved, setSaved] = useState<Record<Lang, boolean>>({ en: false, de: false });
-  const [history, setHistory] = useState<Judgment[]>([]);
+  const [saved, setSaved] = useState<Record<Lang, "shared" | "local" | null>>({ en: null, de: null });
   const [running, setRunning] = useState(false);
   const ctl = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    setHistory(loadHistory());
+    setRater(rememberedName());
+    try {
+      const sent = localStorage.getItem("gmt-compare-text");
+      if (sent?.trim()) setText(sent);
+      localStorage.removeItem("gmt-compare-text");
+    } catch {}
+    const json = (r: Response) => (r.ok ? r.json() : null);
     fetch("/api/samples")
       .then((r) => (r.ok ? r.json() : []))
       .then(setSamples)
       .catch(() => undefined);
-    Promise.all([
-      fetch("/api/deepl").then((r) => (r.ok ? r.json() : null)),
-      fetch("/api/open-mt").then((r) => (r.ok ? r.json() : null)),
-    ])
-      .then(([d, o]) => setAvailable({ deepl: Boolean(d?.configured), open: Boolean(o?.configured) }))
+    Promise.all([fetch("/api/deepl").then(json), fetch("/api/open-mt").then(json)])
+      .then(([d, o]) => setHave({ deepl: Boolean(d?.configured), open: Boolean(o?.configured) }))
       .catch(() => undefined);
   }, []);
 
-  const usable = (id: SystemId) =>
-    id === "gmt" ? Boolean(sample && text === sample.fr) : id === "open" ? available.open : id === "deepl" || KIND[id] === "pipeline" ? id === "claude" || available.deepl : true;
+  const usable = (c: Candidate) =>
+    c.needs === "sample" ? Boolean(sample && text.trim() === sample.fr.trim()) : c.needs === "deepl" ? have.deepl : c.needs === "open" ? have.open : true;
+  const picked = CANDIDATES.filter((c) => chosen[c.id] && usable(c));
 
   function pickSample(s: Sample | null) {
     setSample(s);
@@ -132,9 +105,8 @@ export default function Compare() {
 
   async function run() {
     const src = text.trim();
-    const ls = (["en", "de"] as Lang[]).filter((l) => langs[l]);
-    const systems = SYSTEMS.map((s) => s.id).filter((id) => chosen[id] && usable(id));
-    if (!src || !ls.length || !systems.length) return;
+    const ls = LANGS.filter((l) => langs[l]);
+    if (!src || !ls.length || !picked.length) return;
     const res = await fetch("/api/analyze", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: src }) });
     if (res.status === 401) {
       window.location.assign("/login?next=/compare");
@@ -142,142 +114,112 @@ export default function Compare() {
     }
     const analysis = (await res.json()) as Analysis;
     const smp = sample && src === sample.fr.trim() ? sample : null;
-    setRunSrc({ text: src, sample: smp, langs: ls, terms: analysis.terms });
-    setOrder({ en: shuffle(systems), de: shuffle(systems) });
-    setPipes({});
-    setSingles({});
+    ctl.current = new AbortController();
+    const signal = ctl.current.signal;
+    setRunning(true);
+    setRuns({});
     setRatings({});
     setBest({ en: null, de: null });
     setRevealed({ en: false, de: false });
-    setSaved({ en: false, de: false });
-    setRunning(true);
-    ctl.current = new AbortController();
-    const signal = ctl.current.signal;
-    const pipePatch = (k: string) => (fn: (r: LangRun) => LangRun) => setPipes((m) => ({ ...m, [k]: fn(m[k] ?? emptyRun()) }));
-    const singlePatch = (k: string) => (fn: (r: OpenRun) => OpenRun) => setSingles((m) => ({ ...m, [k]: fn(m[k] ?? emptyOpen()) }));
-    const tasks: Promise<void>[] = [];
-    for (const lang of ls) {
-      for (const id of systems) {
-        const k = `${lang}:${id}`;
-        if (KIND[id] === "pipeline") {
-          tasks.push(runLanguage({ lang, text: src, terms: analysis.terms, effort, swiss, signal, patch: pipePatch(k), pipeline: id as Pipeline }));
-        } else if (id === "deepl") {
-          tasks.push(runOpenLanguage({ lang, text: src, swiss, signal, patch: singlePatch(k), engine: "deepl" }));
-        } else if (id === "gmt" && smp) {
-          setSingles((m) => ({ ...m, [k]: { ...emptyOpen(), status: "done", text: smp[lang], live: smp[lang] } }));
-        }
+    setSaved({ en: null, de: null });
+    setOrder({ en: shuffle(picked.map((c) => c.id)), de: shuffle(picked.map((c) => c.id)) });
+
+    // one pruning call serves every Claude-edited candidate
+    let gone = new Set<string>();
+    let sharedUsd = 0;
+    const edited = picked.filter((c) => c.system && c.system !== "deepl" && c.system !== "open");
+    if (edited.some((c) => !c.noPrune) && analysis.terms.length) {
+      try {
+        const pr = await pruneTerms(src, signal);
+        gone = new Set(pr.drop.map((d) => d.key));
+        sharedUsd = pr.usage ? cost([pr.usage]) / (ls.length * edited.length) : 0;
+      } catch {
+        setRunning(false);
+        return;
       }
     }
-    if (systems.includes("open")) {
-      // one ZeroGPU Space: languages one after the other
-      tasks.push(
-        (async () => {
-          for (const lang of ls) await runOpenLanguage({ lang, text: src, swiss, signal, patch: singlePatch(`${lang}:open`) });
-        })(),
-      );
+    const terms = analysis.terms.filter((h) => !gone.has(h.key));
+    setRunSrc({ text: src, sample: smp, langs: ls, terms });
+
+    const patch = (k: string) => (fn: (r: LangRun) => LangRun) => setRuns((m) => ({ ...m, [k]: fn(m[k] ?? emptyRun()) }));
+    const tasks: (() => Promise<void>)[] = [];
+    const gpu: (() => Promise<void>)[] = []; // the fine-tuned model: one GPU, one job at a time
+    for (const lang of ls) {
+      for (const c of picked) {
+        const k = `${lang}:${c.id}`;
+        if (c.id === "gmt") {
+          if (smp) setRuns((m) => ({ ...m, [k]: { ...emptyRun(), status: "done", final: smp[lang], edited: smp[lang], live: smp[lang] } }));
+          continue;
+        }
+        const job = () =>
+          runLanguage({
+            lang,
+            text: src,
+            terms: c.noPrune ? analysis.terms : terms,
+            dropTerms: c.noPrune ? [] : [...gone],
+            effort,
+            swiss,
+            signal,
+            patch: patch(k),
+            system: c.system,
+            variant: c.variant,
+            variantId: c.id === c.system ? null : c.id,
+            origin: "compare",
+            sharedUsd: c.system === "deepl" || c.system === "open" || c.noPrune ? 0 : sharedUsd,
+          });
+        (c.system === "open" ? gpu : tasks).push(job);
+      }
     }
-    await Promise.allSettled(tasks);
+    await Promise.all([
+      pool(tasks, 4),
+      (async () => {
+        for (const job of gpu) await job().catch(() => undefined);
+      })(),
+    ]);
     ctl.current = null;
     setRunning(false);
   }
 
-  function cand(lang: Lang, id: SystemId): Cand {
-    const k = `${lang}:${id}`;
-    if (KIND[id] === "pipeline") {
-      const r = pipes[k] ?? emptyRun();
-      return {
-        status: r.status,
-        text: r.final,
-        live: r.live,
-        ms: r.usage.reduce((s, u) => s + u.ms, 0),
-        usd: cost(r.usage),
-        deeplChars: r.deeplChars,
-        error: r.error,
-      };
-    }
-    const o = singles[k] ?? emptyOpen();
-    return { status: o.status, text: o.text, live: o.live, ms: o.ms, usd: 0, deeplChars: o.chars, error: o.error };
-  }
-
-  function save(lang: Lang) {
-    if (!runSrc) return;
+  async function save(lang: Lang) {
+    if (!runSrc || !rater.trim()) return;
+    rememberName(rater);
     const j: Judgment = {
-      saved: new Date().toISOString(),
+      rater: rater.trim(),
       sample: runSrc.sample?.id ?? null,
       lang,
       blind,
       source: runSrc.text,
       best: best[lang],
-      candidates: order[lang].map((id, i) => ({
-        label: letter(i),
-        system: id,
-        text: cand(lang, id).text,
-        rating: ratings[`${lang}:${id}`]?.rating ?? null,
-        note: ratings[`${lang}:${id}`]?.note ?? "",
-      })),
+      candidates: order[lang].map((id, i) => {
+        const r = ratings[`${lang}:${id}`] ?? NO_RATING;
+        return { label: letter(i), system: id, text: runs[`${lang}:${id}`]?.final ?? "", score: r.score, spans: r.spans, note: r.note };
+      }),
     };
-    const next = [...loadHistory(), j];
-    try {
-      localStorage.setItem(STORE, JSON.stringify(next));
-    } catch {}
-    setHistory(next);
-    setSaved((s) => ({ ...s, [lang]: true }));
+    const ok = await saveEvent("judgment", { ...j, effort, swiss });
+    if (!ok) {
+      try {
+        localStorage.setItem(LOCAL, JSON.stringify([...(JSON.parse(localStorage.getItem(LOCAL) ?? "[]") as Judgment[]), j]));
+      } catch {}
+    }
+    setSaved((s) => ({ ...s, [lang]: ok ? "shared" : "local" }));
     setRevealed((r) => ({ ...r, [lang]: true }));
   }
 
-  function exportCsv() {
-    const head = ["saved", "sample", "lang", "blind", "system", "label", "rating", "best", "note", "source", "text"];
-    const lines = history.flatMap((j) =>
-      j.candidates.map((c) =>
-        [j.saved, j.sample, j.lang, j.blind, c.system, c.label, c.rating, j.best === c.system ? 1 : 0, c.note, j.source, c.text].map(csvCell).join(","),
-      ),
-    );
-    const blob = new Blob([[head.join(","), ...lines].join("\n")], { type: "text/csv;charset=utf-8" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `gmt-judgments-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  }
-
-  function clearHistory() {
-    if (!window.confirm(`Delete the ${history.length} saved judgment(s) stored in this browser?`)) return;
-    try {
-      localStorage.removeItem(STORE);
-    } catch {}
-    setHistory([]);
-  }
-
-  const summary = useMemo(() => {
-    const agg = new Map<SystemId, { n: number; sum: number; best: number; seen: number }>();
-    for (const j of history)
-      for (const c of j.candidates) {
-        const a = agg.get(c.system) ?? { n: 0, sum: 0, best: 0, seen: 0 };
-        a.seen += 1;
-        if (c.rating) {
-          a.n += 1;
-          a.sum += c.rating;
-        }
-        if (j.best === c.system) a.best += 1;
-        agg.set(c.system, a);
-      }
-    return SYSTEMS.filter((s) => agg.has(s.id)).map((s) => ({ id: s.id, ...agg.get(s.id)! }));
-  }, [history]);
+  const groups: [string, Candidate[]][] = [
+    ["Systems", CANDIDATES.filter((c) => c.group !== "component")],
+    ["One component switched off", CANDIDATES.filter((c) => c.group === "component")],
+  ];
 
   return (
     <main className="page" style={{ display: "grid", gap: 20 }}>
+      <h1 className="page-title">Compare systems, blind</h1>
       <section className="panel" style={{ display: "grid", gap: 12 }}>
         <div className="panel-head">
-          <span className="label">Compare the systems on the same text — judge them blind</span>
+          <span className="label">French text</span>
           <div className="row" style={{ gap: 6 }}>
             {samples.length > 0 && (
               <>
-                <select
-                  value={sample?.id ?? ""}
-                  onChange={(e) => pickSample(samples.find((s) => s.id === e.target.value) ?? null)}
-                  disabled={running}
-                  aria-label="GMT Magazine sample"
-                >
+                <select value={sample?.id ?? ""} onChange={(e) => pickSample(samples.find((s) => s.id === e.target.value) ?? null)} disabled={running} aria-label="GMT Magazine sample">
                   <option value="">GMT Magazine sample…</option>
                   {samples.map((s) => (
                     <option key={s.id} value={s.id}>
@@ -295,27 +237,27 @@ export default function Compare() {
         <textarea
           className="source"
           lang="fr"
-          style={{ minHeight: 140 }}
+          style={{ minHeight: 130 }}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Paste French copy, or load a GMT Magazine sample (issues 97–98, held out — GMT’s own EN and DE can then join the comparison, hidden among the systems)."
+          placeholder="Paste French copy, or load a GMT Magazine sample: GMT’s own translation then joins the comparison, hidden among the systems."
           aria-label="French source text"
         />
-        <div className="row" style={{ flexWrap: "wrap", gap: 14 }}>
-          {SYSTEMS.map((s) => (
-            <label key={s.id} className="check" title={s.help} style={{ opacity: usable(s.id) ? 1 : 0.45 }}>
-              <input
-                type="checkbox"
-                checked={chosen[s.id] && usable(s.id)}
-                disabled={running || !usable(s.id)}
-                onChange={(e) => setChosen((c) => ({ ...c, [s.id]: e.target.checked }))}
-              />{" "}
-              {s.label}
-            </label>
-          ))}
-        </div>
-        <div className="row" style={{ flexWrap: "wrap", gap: 14 }}>
-          {(["en", "de"] as Lang[]).map((l) => (
+        {groups.map(([title, list], g) => (
+          <div key={title} className="row" style={{ gap: "6px 16px" }}>
+            <span className="label" style={{ minWidth: 190 }}>
+              {title}
+            </span>
+            {list.map((c) => (
+              <label key={c.id} className="check" title={c.help} style={{ opacity: usable(c) ? 1 : 0.45 }}>
+                <input type="checkbox" checked={Boolean(chosen[c.id]) && usable(c)} disabled={running || !usable(c)} onChange={(e) => setChosen((x) => ({ ...x, [c.id]: e.target.checked }))} />{" "}
+                {g === 1 ? c.label.replace(/^Claude \+ editor, /, "").replace(/^Claude, /, "").replace(/^Claude \+ previous/, "previous") : c.label}
+              </label>
+            ))}
+          </div>
+        ))}
+        <div className="row" style={{ gap: "6px 16px" }}>
+          {LANGS.map((l) => (
             <label key={l} className="check">
               <input type="checkbox" checked={langs[l]} disabled={running} onChange={(e) => setLangs((x) => ({ ...x, [l]: e.target.checked }))} /> {LANG_TITLE[l]}
             </label>
@@ -323,30 +265,31 @@ export default function Compare() {
           <label className="check">
             <input type="checkbox" checked={swiss} disabled={running} onChange={(e) => setSwiss(e.target.checked)} /> Swiss German
           </label>
-          <label className="check">
-            Claude effort
-            <select value={effort} onChange={(e) => setEffort(e.target.value as Effort)} disabled={running}>
-              <option value="high">High (faster)</option>
-              <option value="xhigh">Extra high (production)</option>
-            </select>
-          </label>
-          <label className="check" title="Hide which system wrote what until you save your ratings">
-            <input type="checkbox" checked={blind} disabled={running} onChange={(e) => setBlind(e.target.checked)} /> Blind (shuffled, names hidden)
+          <div className="seg" role="group" aria-label="Quality">
+            <button type="button" aria-pressed={effort === "high"} disabled={running} onClick={() => setEffort("high")}>
+              Quick draft
+            </button>
+            <button type="button" aria-pressed={effort === "xhigh"} disabled={running} onClick={() => setEffort("xhigh")}>
+              Publication
+            </button>
+          </div>
+          <label className="check" title="Shuffle the candidates and hide which system wrote what until you save">
+            <input type="checkbox" checked={blind} disabled={running} onChange={(e) => setBlind(e.target.checked)} /> Blind
           </label>
         </div>
         <div className="row">
-          <button className="btn" onClick={run} disabled={running || !text.trim()}>
-            Run the selected systems
+          <button className="btn" onClick={run} disabled={running || !text.trim() || !picked.length}>
+            Run {picked.length} candidate{picked.length === 1 ? "" : "s"}
           </button>
           {running && (
             <button className="btn ghost" onClick={() => ctl.current?.abort()}>
               Stop
             </button>
           )}
-          <span className="muted small">
-            Each Claude pipeline costs about $0.05–0.15 per language for a paragraph at “high”; DeepL ≈ €0.002 per paragraph; the fine-tuned model is free
-            but slower.
-          </span>
+          <span style={{ flex: 1 }} />
+          <Link href="/scoreboard" className="small">
+            Scoreboard: everyone’s ratings →
+          </Link>
         </div>
       </section>
 
@@ -359,62 +302,20 @@ export default function Compare() {
             terms={runSrc.terms}
             swiss={swiss}
             order={order[lang]}
-            cand={(id) => cand(lang, id)}
+            run={(id) => runs[`${lang}:${id}`] ?? emptyRun()}
             blind={blind && !revealed[lang]}
-            ratings={ratings}
-            setRating={(id, v) => setRatings((r) => ({ ...r, [`${lang}:${id}`]: { ...(r[`${lang}:${id}`] ?? { rating: null, note: "" }), ...v } }))}
+            rating={(id) => ratings[`${lang}:${id}`] ?? NO_RATING}
+            setRating={(id, fn) => setRatings((r) => ({ ...r, [`${lang}:${id}`]: fn(r[`${lang}:${id}`] ?? NO_RATING) }))}
             best={best[lang]}
             setBest={(id) => setBest((b) => ({ ...b, [lang]: id }))}
             saved={saved[lang]}
             onSave={() => save(lang)}
             onReveal={() => setRevealed((r) => ({ ...r, [lang]: !r[lang] }))}
             running={running}
+            rater={rater}
+            setRater={setRater}
           />
         ))}
-
-      <section className="panel" style={{ display: "grid", gap: 10 }}>
-        <div className="panel-head">
-          <span className="label">Your judgments so far ({history.length} saved in this browser)</span>
-          <div className="row" style={{ gap: 6 }}>
-            <button className="btn ghost small" onClick={exportCsv} disabled={!history.length}>
-              Export CSV
-            </button>
-            <button className="btn ghost small" onClick={clearHistory} disabled={!history.length}>
-              Clear
-            </button>
-          </div>
-        </div>
-        {summary.length ? (
-          <div className="table-wrap"><table>
-            <thead>
-              <tr>
-                <th>System</th>
-                <th className="num">Judged</th>
-                <th className="num">Mean rating (1–5)</th>
-                <th className="num">Chosen as best</th>
-              </tr>
-            </thead>
-            <tbody>
-              {summary
-                .sort((a, b) => b.sum / Math.max(b.n, 1) - a.sum / Math.max(a.n, 1))
-                .map((s) => (
-                  <tr key={s.id}>
-                    <td>{LABEL[s.id]}</td>
-                    <td className="num">{s.n}</td>
-                    <td className="num">{s.n ? (s.sum / s.n).toFixed(2) : "—"}</td>
-                    <td className="num">
-                      {s.best} / {s.seen}
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table></div>
-        ) : (
-          <p className="muted small" style={{ margin: 0 }}>
-            Rate the candidates and save: the summary across all your comparisons appears here. Ratings stay in this browser — export the CSV to share them.
-          </p>
-        )}
-      </section>
     </main>
   );
 }
@@ -424,48 +325,95 @@ function LangCompare(props: {
   source: string;
   terms: TermHit[];
   swiss: boolean;
-  order: SystemId[];
-  cand: (id: SystemId) => Cand;
+  order: string[];
+  run: (id: string) => LangRun;
   blind: boolean;
-  ratings: Record<string, { rating: number | null; note: string }>;
-  setRating: (id: SystemId, v: Partial<{ rating: number | null; note: string }>) => void;
-  best: SystemId | null;
-  setBest: (id: SystemId) => void;
-  saved: boolean;
+  rating: (id: string) => Rating;
+  setRating: (id: string, fn: (r: Rating) => Rating) => void;
+  best: string | null;
+  setBest: (id: string) => void;
+  saved: "shared" | "local" | null;
   onSave: () => void;
   onReveal: () => void;
   running: boolean;
+  rater: string;
+  setRater: (v: string) => void;
 }) {
   const { lang, source, order, blind } = props;
-  const cands = order.map((id) => ({ id, c: props.cand(id) }));
+  const [pending, setPending] = useState<{ id: string; start: number; end: number; text: string } | null>(null);
+  const cands = order.map((id) => ({ id, r: props.run(id) }));
   const srcParas = splitParagraphs(source);
-  const allDone = cands.every(({ c }) => c.status !== "running" && c.status !== "idle");
-  const paras = cands.map(({ c }) => splitParagraphs(c.status === "done" ? c.text : c.live));
-  const aligned = allDone && srcParas.length > 1 && paras.every((p, i) => cands[i].c.status !== "done" || p.length === srcParas.length);
-  const name = (i: number) => (blind ? `System ${letter(i)}` : `${letter(i)} · ${LABEL[order[i]]}`);
-  const qa = (i: number) => {
-    const c = cands[i].c;
-    if (c.status !== "done") return null;
-    const s = summarize(runQA(source, c.text, lang, props.terms, props.swiss));
-    return `${s.errors} QA errors · ${s.warnings} warnings`;
-  };
-  const meta = (i: number) => {
-    const c = cands[i].c;
-    const parts = [`${(c.ms / 1000).toFixed(0)} s`];
-    if (c.usd) parts.push(`$${c.usd.toFixed(3)}`);
-    if (c.deeplChars) parts.push(`DeepL ${c.deeplChars.toLocaleString("en")} chars`);
-    return parts.join(" · ");
-  };
+  const allDone = cands.every(({ r }) => r.status !== "running" && r.status !== "idle");
+  const textOf = (r: LangRun) => (r.status === "done" ? r.final : r.live);
+  const paras = cands.map(({ r }) => splitParagraphs(textOf(r)));
+  const offs = cands.map(({ r }, i) => paragraphOffsets(textOf(r), paras[i]));
+  const aligned = allDone && srcParas.length > 1 && paras.every((p, i) => cands[i].r.status !== "done" || p.length === srcParas.length);
+  const name = (i: number) => (blind ? `Candidate ${letter(i)}` : `${letter(i)} · ${BY_ID[order[i]]?.label ?? order[i]}`);
+  const locked = props.saved !== null;
+
+  /** Turn the browser's selection inside one candidate's text into offsets in that text. */
+  function onSelect() {
+    if (locked) return;
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) return setPending(null);
+    const range = sel.getRangeAt(0);
+    const box = (n: Node | null) => (n instanceof Element ? n : n?.parentElement)?.closest<HTMLElement>("[data-cand]") ?? null;
+    const el = box(range.startContainer);
+    if (!el || el !== box(range.endContainer)) return setPending(null);
+    const before = document.createRange();
+    before.selectNodeContents(el);
+    before.setEnd(range.startContainer, range.startOffset);
+    const start = Number(el.dataset.off) + before.toString().length;
+    const picked = range.toString();
+    if (!picked.trim()) return setPending(null);
+    setPending({ id: el.dataset.cand!, start, end: start + picked.length, text: picked });
+  }
+
+  function mark(severity: Span["severity"]) {
+    if (!pending) return;
+    const span: Span = { start: pending.start, end: pending.end, text: pending.text, severity };
+    props.setRating(pending.id, (r) => ({ ...r, spans: [...r.spans.filter((s) => s.end <= span.start || s.start >= span.end), span].sort((a, b) => a.start - b.start) }));
+    setPending(null);
+    window.getSelection()?.removeAllRanges();
+  }
+
   const grid = { display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" } as const;
-  const card = (i: number, body: string, status: Cand["status"], error?: string) => (
-    <div key={order[i]} className="output" lang={lang} style={{ minHeight: 0, margin: 0 }}>
-      <div className="label" style={{ marginBottom: 6 }}>
-        {name(i)}
-        {status === "running" && <span className="muted small"> — translating…</span>}
+  const card = (i: number, body: string, from: number) => {
+    const { id, r } = cands[i];
+    const marks: Mark[] = props.rating(id).spans.map((s) => ({
+      s: s.start,
+      e: s.end,
+      cls: "err-span " + s.severity,
+      title: `${s.severity} error — click to remove`,
+      onClick: locked ? undefined : () => props.setRating(id, (x) => ({ ...x, spans: x.spans.filter((y) => y !== s) })),
+    }));
+    return (
+      <div key={id} className="cand" lang={lang}>
+        <div className="label" style={{ marginBottom: 6 }}>
+          {name(i)}
+          {r.status === "running" && <span className="muted"> — {r.liveLabel || "translating"}…</span>}
+        </div>
+        {r.error ? (
+          <div className="notice err">{r.error}</div>
+        ) : (
+          <div className="cand-text" data-cand={r.status === "done" ? id : undefined} data-off={from}>
+            {body ? marked(body, marks, from) : <span className="muted">…</span>}
+          </div>
+        )}
+        {pending?.id === id && pending.start >= from && pending.start < from + Math.max(body.length, 1) && (
+          <div className="row mark-bar">
+            <span className="small muted">Mark the selection as an error:</span>
+            <button className="btn small ghost" onClick={() => mark("minor")}>
+              Minor
+            </button>
+            <button className="btn small ghost" onClick={() => mark("major")}>
+              Major
+            </button>
+          </div>
+        )}
       </div>
-      {error ? <div className="notice err">{error}</div> : body || <span className="muted">…</span>}
-    </div>
-  );
+    );
+  };
 
   return (
     <section className="panel" style={{ display: "grid", gap: 14 }} aria-label={`${LANG_TITLE[lang]} comparison`}>
@@ -475,90 +423,114 @@ function LangCompare(props: {
           {blind ? "Reveal the systems" : "Hide the names"}
         </button>
       </div>
+      {allDone && !locked && (
+        <p className="muted small" style={{ margin: 0 }}>
+          Select any wording that is wrong and mark it <b>minor</b> (polish) or <b>major</b> (a reader would notice: wrong term, wrong meaning, unnatural sentence). Then score each
+          candidate and save.
+        </p>
+      )}
 
-      {aligned
-        ? srcParas.map((p, k) => (
+      <div onMouseUp={onSelect} onKeyUp={onSelect} style={{ display: "grid", gap: 14 }}>
+        {aligned ? (
+          srcParas.map((p, k) => (
             <div key={k} style={{ display: "grid", gap: 8 }}>
-              <div className="muted small" lang="fr" style={{ borderLeft: "3px solid var(--gold, #BCA480)", paddingLeft: 10 }}>
+              <div className="muted small src-quote" lang="fr">
                 {p}
               </div>
-              <div style={grid}>{cands.map(({ c }, i) => card(i, paras[i][k] ?? "", c.status, c.error))}</div>
+              <div style={grid}>{cands.map((_, i) => card(i, paras[i][k] ?? "", offs[i][k] ?? 0))}</div>
             </div>
           ))
-        : (
-            <div style={grid}>{cands.map(({ c }, i) => card(i, c.status === "done" ? c.text : c.live, c.status, c.error))}</div>
-          )}
+        ) : (
+          <>
+            {allDone && (
+              <div className="muted small src-quote" lang="fr" style={{ whiteSpace: "pre-wrap" }}>
+                {source}
+              </div>
+            )}
+            <div style={grid}>{cands.map(({ r }, i) => card(i, textOf(r), 0))}</div>
+          </>
+        )}
+      </div>
 
       {allDone && (
-        <div className="table-wrap"><table>
-          <thead>
-            <tr>
-              <th>Candidate</th>
-              <th>Rating (1 = unusable, 5 = publishable as is)</th>
-              <th>Best</th>
-              <th>Note</th>
-              {!blind && <th>Run</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {cands.map(({ id, c }, i) => {
-              const r = props.ratings[`${lang}:${id}`];
-              return (
-                <tr key={id}>
-                  <td>{name(i)}</td>
-                  <td>
-                    <div className="row" style={{ gap: 4 }}>
-                      {[1, 2, 3, 4, 5].map((v) => (
-                        <button
-                          key={v}
-                          type="button"
-                          className={"btn small " + (r?.rating === v ? "" : "ghost")}
-                          aria-pressed={r?.rating === v}
-                          disabled={c.status !== "done" || props.saved}
-                          onClick={() => props.setRating(id, { rating: v })}
-                        >
-                          {v}
-                        </button>
-                      ))}
-                    </div>
-                  </td>
-                  <td>
-                    <input
-                      type="radio"
-                      name={`best-${lang}`}
-                      checked={props.best === id}
-                      disabled={c.status !== "done" || props.saved}
-                      onChange={() => props.setBest(id)}
-                      aria-label={`${name(i)} is the best`}
-                    />
-                  </td>
-                  <td>
-                    <input
-                      type="text"
-                      value={r?.note ?? ""}
-                      disabled={props.saved}
-                      onChange={(e) => props.setRating(id, { note: e.target.value })}
-                      placeholder="terminology, tone, error…"
-                      style={{ width: "100%" }}
-                    />
-                  </td>
-                  {!blind && (
-                    <td className="muted small">
-                      {meta(i)}
-                      {qa(i) && <div>{qa(i)}</div>}
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Candidate</th>
+                <th>Errors marked</th>
+                <th style={{ minWidth: 240 }}>Score: 0 unusable · 50 needs real editing · 100 publishable as is</th>
+                <th>Best</th>
+                <th>Note</th>
+                {!blind && <th>Run</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {cands.map(({ id, r }, i) => {
+                const rt = props.rating(id);
+                const ok = r.status === "done";
+                const major = rt.spans.filter((s) => s.severity === "major").length;
+                const qa = ok && id !== "gmt" ? summarize(runQA(source, r.final, lang, props.terms, props.swiss)) : null;
+                return (
+                  <tr key={id}>
+                    <td>{name(i)}</td>
+                    <td className="small">
+                      {major} major · {rt.spans.length - major} minor
                     </td>
-                  )}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table></div>
+                    <td>
+                      <div className="row" style={{ gap: 8, flexWrap: "nowrap" }}>
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          step={5}
+                          value={rt.score ?? 50}
+                          disabled={!ok || locked}
+                          onChange={(e) => props.setRating(id, (x) => ({ ...x, score: Number(e.target.value) }))}
+                          aria-label={`Score for ${name(i)}`}
+                          style={{ flex: 1, opacity: rt.score === null ? 0.45 : 1 }}
+                        />
+                        <b className="num" style={{ width: 34 }}>
+                          {rt.score ?? "—"}
+                        </b>
+                      </div>
+                    </td>
+                    <td>
+                      <input type="radio" name={`best-${lang}`} checked={props.best === id} disabled={!ok || locked} onChange={() => props.setBest(id)} aria-label={`${name(i)} is the best`} />
+                    </td>
+                    <td>
+                      <input type="text" value={rt.note} disabled={locked} onChange={(e) => props.setRating(id, (x) => ({ ...x, note: e.target.value }))} placeholder="optional" style={{ width: "100%" }} />
+                    </td>
+                    {!blind && (
+                      <td className="muted small">
+                        {r.trace ? `${Math.round(r.trace.ms / 1000)} s · $${r.trace.usd.toFixed(3)}${r.trace.deeplChars ? ` · DeepL ${r.trace.deeplChars} chars` : ""}` : "—"}
+                        {r.trace && r.trace.calls > 1 && (
+                          <div>
+                            {r.trace.diagnosed} diagnosed · {r.trace.applied} repaired
+                          </div>
+                        )}
+                        {qa && (
+                          <div>
+                            QA: {qa.errors} errors · {qa.warnings} warnings
+                          </div>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
       {allDone && (
         <div className="row">
-          <button className="btn" onClick={props.onSave} disabled={props.saved || props.running}>
-            {props.saved ? "Saved — systems revealed" : "Save my ratings (and reveal)"}
+          {!locked && <input className="name" placeholder="Your name" value={props.rater} onChange={(e) => props.setRater(e.target.value)} aria-label="Your name" />}
+          <button className="btn" onClick={props.onSave} disabled={locked || props.running || !props.rater.trim() || !cands.some(({ id }) => props.rating(id).score !== null)}>
+            {locked ? "Saved — systems revealed" : "Save my judgment (and reveal)"}
           </button>
+          {props.saved === "shared" && <span className="small muted">Added to the shared scoreboard.</span>}
+          {props.saved === "local" && <span className="small muted">The shared store is unavailable: kept in this browser only.</span>}
         </div>
       )}
     </section>

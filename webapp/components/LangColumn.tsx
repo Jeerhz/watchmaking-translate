@@ -1,13 +1,17 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { cost, diffWords, editRate } from "@/lib/client";
+// One language of a run: progress, what each stage did, validation, and the two things an
+// editor checks (changes, QA). Reasoning, prompts and cost sit in a closed "Inspect" drawer.
+
+import { useEffect, useMemo, useState } from "react";
+import { cost, diffWords, editRate, rememberedName, rememberName, saveEvent } from "@/lib/client";
 import { runQA, summarize, type QACheck } from "@/lib/qa";
 import { LANG_NAME, type Change, type Lang, type TermHit } from "@/lib/types";
-import { STEP_LABEL, type LangRun, type OpenRun, type StepId } from "./run";
+import StageTrace from "./StageTrace";
+import { STEP_LABEL, SYSTEM_LABEL, type LangRun, type StepId } from "./run";
 
-const STEPS: StepId[] = ["evidence", "draft", "review", "qa", "fix", "validate"];
-type Tab = "text" | "diff" | "changes" | "qa" | "open" | "deepl" | "reasoning" | "prompts" | "cost";
+const STEPS: StepId[] = ["evidence", "draft", "diagnose", "repair", "qa", "validate"];
+type Tab = "changes" | "qa";
 
 function Stepper({ steps }: { steps: LangRun["steps"] }) {
   const icon = { pending: "○", active: "◐", done: "✓", skipped: "–", error: "✕" } as const;
@@ -23,16 +27,17 @@ function Stepper({ steps }: { steps: LangRun["steps"] }) {
   );
 }
 
-function Changes({ list, empty }: { list: Change[]; empty: string }) {
-  if (!list.length) return <p className="muted small">{empty}</p>;
+function Changes({ list }: { list: Change[] }) {
   return (
     <ul className="qa-list" style={{ gap: 8 }}>
       {list.map((c, i) => (
-        <li key={i} className="change" style={{ display: "grid", gridTemplateColumns: "1fr" }}>
+        <li key={i} className="change" style={{ display: "grid", gridTemplateColumns: "1fr", opacity: c.rejected ? 0.7 : 1 }}>
           <div>
+            {c.type && <span className={"badge " + (c.severity === "minor" ? "info" : c.severity === "major" ? "warn" : "error")}>{c.type}{c.severity ? ` · ${c.severity}` : ""}</span>}{" "}
             <del>{c.before}</del> → <ins>{c.after}</ins>
           </div>
           <div className="why">{c.reason}</div>
+          {c.rejected && <div className="why">Not applied: {c.rejected}.</div>}
         </li>
       ))}
     </ul>
@@ -56,314 +61,233 @@ function QAList({ checks, showOk }: { checks: QACheck[]; showOk: boolean }) {
   );
 }
 
-function QASummary({ label, checks }: { label: string; checks: QACheck[] }) {
-  const s = summarize(checks);
-  return (
-    <div className="stat">
-      <span>{label}</span>
-      <b>
-        {s.errors} <small className="muted" style={{ fontSize: 12 }}>errors</small> · {s.warnings}{" "}
-        <small className="muted" style={{ fontSize: 12 }}>warnings</small>
-      </b>
-      <span>{s.passed} checks passed</span>
-    </div>
-  );
-}
-
 export default function LangColumn(props: {
   lang: Lang;
   run: LangRun;
   source: string;
   terms: TermHit[];
   swiss: boolean;
-  open: OpenRun | null;
-  openLabel: string;
-  deepl: OpenRun | null;
-  deeplLabel: string;
-  pipelineLabel: string;
+  effort: string;
+  editing: boolean;
+  onEditing: (on: boolean) => void;
   onEdit: (text: string) => void;
   onApprove: (by: string) => void;
   onReopen: () => void;
 }) {
-  const { lang, run, source, terms, swiss, open, openLabel, deepl, deeplLabel } = props;
-  const [tab, setTab] = useState<Tab>("text");
+  const { lang, run, source, terms, swiss } = props;
+  const [tab, setTab] = useState<Tab>("changes");
   const [reviewer, setReviewer] = useState("");
   const [showOk, setShowOk] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [stored, setStored] = useState<boolean | null>(null);
+  useEffect(() => setReviewer(rememberedName()), []);
+
   const done = run.status === "done";
-  const diff = useMemo(() => (done ? diffWords(run.draft, run.edited) : []), [done, run.draft, run.edited]);
-  const qaEdited = useMemo(
-    () => (done && run.edited !== run.final ? runQA(source, run.edited, lang, terms, swiss) : null),
-    [done, run.edited, run.final, source, lang, terms, swiss],
-  );
+  const touched = done && run.edited !== run.final;
+  const humanShare = useMemo(() => (done ? editRate(diffWords(run.final, run.edited)) : null), [done, run.final, run.edited]);
+  const draftDiff = useMemo(() => (done ? diffWords(run.draft, run.edited) : []), [done, run.draft, run.edited]);
+  const qaNow = useMemo(() => (touched ? runQA(source, run.edited, lang, terms, swiss) : run.qaFinal), [touched, run.edited, run.qaFinal, source, lang, terms, swiss]);
+  const qa = summarize(qaNow);
+  const applied = run.changes.filter((c) => !c.rejected);
+  const refused = run.changes.filter((c) => c.rejected);
+  const unrepaired = run.errors.filter((e) => !run.changes.some((c) => !c.rejected && c.before && (e.span.includes(c.before) || c.before.includes(e.span))));
   const usd = cost(run.usage);
-  const tabs: [Tab, string, number | null][] = [
-    ["text", run.approved ? "Validated text" : "Text", null],
-    ["diff", "Draft → final", null],
-    ["changes", "Editor changes", run.changes.length + run.fixChanges.length],
-    ["qa", "QA report", summarize(run.qaFinal).errors + summarize(run.qaFinal).warnings],
-    ...(open ? [["open", "Fine-tuned model", null] as [Tab, string, null]] : []),
-    ...(deepl ? [["deepl", "DeepL", null] as [Tab, string, null]] : []),
-    ["reasoning", "Reasoning", null],
-    ["prompts", "Prompts", run.prompts.length],
-    ["cost", "Cost", null],
-  ];
+
+  async function validate() {
+    const by = reviewer.trim();
+    if (!by || !run.trace) return;
+    rememberName(by);
+    props.onApprove(by);
+    props.onEditing(false);
+    setStored(
+      await saveEvent("validation", {
+        reviewer: by,
+        lang,
+        system: run.system,
+        effort: props.effort,
+        swiss,
+        source,
+        draft: run.draft,
+        final: run.final,
+        validated: run.edited,
+        words: run.trace.words,
+        humanShare: humanShare ?? 0,
+        editorShare: run.trace.editorShare,
+        qaFlags: qa.errors + qa.warnings,
+      }),
+    );
+  }
 
   return (
     <section className="panel" aria-label={LANG_NAME[lang] + " translation"}>
       <div className="panel-head">
         <h2 style={{ margin: 0, fontSize: "1.25rem" }}>{lang === "en" ? "English" : "Deutsch"}</h2>
         <span className="muted small">
-          {run.status === "running"
-            ? run.liveLabel + "…"
-            : done
-              ? `${props.pipelineLabel} · ${run.usage.length} Claude calls · ≈ $${usd.toFixed(2)}${run.deeplChars ? ` + DeepL ${run.deeplChars.toLocaleString("en")} chars (≈ €${((run.deeplChars * 22) / 1e6).toFixed(3)})` : ""}`
-              : ""}
+          {run.status === "running" ? run.liveLabel + "…" : done && run.trace ? `${SYSTEM_LABEL[run.system]} · ${Math.round(run.trace.ms / 1000)} s` : ""}
         </span>
       </div>
       <Stepper steps={run.steps} />
       {run.error && <div className="notice err">{run.error}</div>}
+      {run.status === "running" && run.thinking && <div className="thinking">{run.thinking.slice(-600)}</div>}
 
-      <div className="tabs" role="tablist">
-        {tabs.map(([id, label, n]) => (
-          <button key={id} role="tab" aria-selected={tab === id} onClick={() => setTab(id)} disabled={!done && id !== "text" && id !== "reasoning" && id !== "prompts" && !(id === "open" && open?.status !== "idle") && !(id === "deepl" && deepl?.status !== "idle")}>
-            {label}
-            {n !== null && done && <span className="count">{n}</span>}
-          </button>
-        ))}
-      </div>
+      {done && run.trace && <StageTrace trace={run.trace} humanShare={humanShare} />}
 
-      {tab === "text" &&
-        (!done ? (
-          <>
-            <div className={"output" + (run.live ? "" : " placeholder")} lang={lang}>
-              {run.live || (run.status === "running" ? "Waiting for the first words…" : "The translation appears here.")}
+      {done &&
+        (run.approved ? (
+          <div className="row">
+            <div className="validated" style={{ flex: "1 1 260px" }}>
+              ✓ Validated by <b>{run.approved.by}</b>
+              {run.approved.edited ? " with edits" : " as delivered"}
+              {stored === true ? " — saved to the shared record" : stored === false ? " — not saved (store unavailable)" : ""}
             </div>
-            {run.status === "running" && run.thinking && (
-              <details open>
-                <summary>Model reasoning (summary, live)</summary>
-                <div className="thinking">{run.thinking.slice(-1500)}</div>
-              </details>
-            )}
-          </>
-        ) : run.approved ? (
-          <>
-            <div className="validated">
-              ✓ Validated by <b>{run.approved.by}</b> on {new Date(run.approved.at).toLocaleString()}
-              {run.approved.edited ? " — with manual edits" : " — accepted as delivered"}
-            </div>
-            <div className="output" lang={lang}>
-              {run.edited}
-            </div>
-            <div className="row">
-              <button className="btn ghost small" onClick={props.onReopen}>
-                Re-open for editing
-              </button>
-              <CopyButton text={run.edited} />
-            </div>
-          </>
-        ) : (
-          <>
-            <p className="muted small" style={{ margin: 0 }}>
-              Final text after review{run.fixChanges.length ? " and correction" : ""}. Edit it directly, then validate.
-            </p>
-            <textarea className="final" lang={lang} value={run.edited} onChange={(e) => props.onEdit(e.target.value)} aria-label={`${LANG_NAME[lang]} final text`} />
-            {qaEdited && (
-              <div className="small">
-                <span className="label">QA on your edits</span> <QAInline checks={qaEdited} />
-              </div>
-            )}
-            <div className="row">
-              <input
-                placeholder="Your name"
-                value={reviewer}
-                onChange={(e) => setReviewer(e.target.value)}
-                style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid var(--line)", background: "var(--panel-2)" }}
-                aria-label="Reviewer name"
-              />
-              <button className="btn ok" disabled={!reviewer.trim()} onClick={() => props.onApprove(reviewer.trim())}>
-                Validate translation
-              </button>
-              {run.edited !== run.final && (
-                <button className="btn ghost small" onClick={() => props.onEdit(run.final)}>
-                  Undo my edits
-                </button>
-              )}
-              <CopyButton text={run.edited} />
-            </div>
-          </>
-        ))}
-
-      {tab === "diff" && done && (
-        <>
-          <p className="muted small" style={{ margin: 0 }}>
-            {props.pipelineLabel.startsWith("DeepL") ? "DeepL draft" : "Translator draft"} against the{" "}
-            {run.edited !== run.final ? "edited" : "final"} text: {Math.round(editRate(diff) * 100)}% of the draft’s words changed.
-          </p>
-          <div className="diff" lang={lang}>
-            {diff.map((p, i) => (p.op === "=" ? <span key={i}>{p.text}</span> : p.op === "-" ? <del key={i}>{p.text}</del> : <ins key={i}>{p.text}</ins>))}
+            <button className="btn ghost small" onClick={props.onReopen}>
+              Re-open
+            </button>
+            <CopyButton text={run.edited} copied={copied} setCopied={setCopied} />
           </div>
+        ) : (
+          <div className="row">
+            <button className="btn ghost small" aria-pressed={props.editing} onClick={() => props.onEditing(!props.editing)}>
+              {props.editing ? "Done editing" : "Edit text"}
+            </button>
+            {touched && (
+              <button className="btn ghost small" onClick={() => props.onEdit(run.final)}>
+                Undo my edits
+              </button>
+            )}
+            <CopyButton text={run.edited} copied={copied} setCopied={setCopied} />
+            <span style={{ flex: 1 }} />
+            <input className="name" placeholder="Your name" value={reviewer} onChange={(e) => setReviewer(e.target.value)} aria-label="Reviewer name" />
+            <button className="btn ok" disabled={!reviewer.trim()} onClick={validate}>
+              Validate
+            </button>
+          </div>
+        ))}
+
+      {done && (
+        <>
+          <div className="tabs" role="tablist">
+            <button role="tab" aria-selected={tab === "changes"} onClick={() => setTab("changes")}>
+              Changes<span className="count">{applied.length}</span>
+            </button>
+            <button role="tab" aria-selected={tab === "qa"} onClick={() => setTab("qa")}>
+              QA<span className="count">{qa.errors + qa.warnings}</span>
+            </button>
+          </div>
+
+          {tab === "changes" && (
+            <>
+              {applied.length ? <Changes list={applied} /> : <p className="muted small">{run.trace && run.trace.calls > 1 ? "The editor found nothing to correct in the draft." : "No editor in this system: the draft is the text."}</p>}
+              {refused.length > 0 && (
+                <details>
+                  <summary>{refused.length} edit(s) the desk refused</summary>
+                  <Changes list={refused} />
+                </details>
+              )}
+              {unrepaired.length > 0 && (
+                <details>
+                  <summary>{unrepaired.length} diagnosed error(s) left as they are</summary>
+                  <ul className="qa-list">
+                    {unrepaired.map((e, i) => (
+                      <li key={i}>
+                        <span className={"badge " + (e.severity === "minor" ? "info" : "warn")}>{e.category}</span>
+                        <span>
+                          “{e.span}” <span className="muted">— {e.explanation}</span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </>
+          )}
+
+          {tab === "qa" && (
+            <>
+              <div className="panel-head">
+                <span className="small">
+                  <span className={"badge " + (qa.errors ? "error" : "ok")}>{qa.errors} errors</span>{" "}
+                  <span className={"badge " + (qa.warnings ? "warn" : "ok")}>{qa.warnings} warnings</span>{" "}
+                  <span className="muted">
+                    {qa.passed} checks passed{touched ? " — on your edited text" : ""}
+                  </span>
+                </span>
+                <label className="check small">
+                  <input type="checkbox" checked={showOk} onChange={(e) => setShowOk(e.target.checked)} /> show passed
+                </label>
+              </div>
+              <QAList checks={qaNow} showOk={showOk} />
+              {run.verdicts.length > 0 && (
+                <details>
+                  <summary>The editor’s ruling on {run.verdicts.length} flag(s) raised on the draft</summary>
+                  <ul className="qa-list">
+                    {run.verdicts.map((v, i) => (
+                      <li key={i}>
+                        <span className={"badge " + (v.action === "fixed" ? "warn" : "info")}>{v.action === "fixed" ? "real" : "false alarm"}</span>
+                        <span>
+                          {v.check}
+                          <br />
+                          <span className="muted small">{v.reason}</span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </>
+          )}
+        </>
+      )}
+
+      {(done || run.prompts.length > 0) && (
+        <details className="inspect">
+          <summary>Inspect: draft, reasoning, prompts, cost</summary>
+          {done && (
+            <>
+              <div className="label">Draft → {touched ? "your text" : "final"}</div>
+              <div className="diff" lang={lang}>
+                {draftDiff.map((p, i) => (p.op === "=" ? <span key={i}>{p.text}</span> : p.op === "-" ? <del key={i}>{p.text}</del> : <ins key={i}>{p.text}</ins>))}
+              </div>
+            </>
+          )}
           {run.alternative && (
-            <details>
-              <summary className="small">DeepL’s version, shown to the editor beside the draft</summary>
-              <div className="output" lang={lang}>
+            <>
+              <div className="label">DeepL’s version, shown to the editor</div>
+              <div className="diff" lang={lang}>
                 {run.alternative}
               </div>
-            </details>
-          )}
-        </>
-      )}
-
-      {tab === "changes" && done && (
-        <>
-          <div className="label">Editorial review — {run.changes.length} change(s)</div>
-          <Changes list={run.changes} empty="The editor kept the draft as it was." />
-          {run.steps.fix === "done" && (
-            <>
-              <div className="label">Correction after QA — {run.fixChanges.length} change(s)</div>
-              <Changes list={run.fixChanges} empty="No change: every QA flag was judged a false alarm." />
             </>
           )}
-        </>
-      )}
-
-      {tab === "qa" && done && (
-        <>
-          <div className="stats">
-            <QASummary label="Translator draft" checks={run.qaDraft} />
-            <QASummary label="After review" checks={run.qaReviewed} />
-            <QASummary label="Final" checks={run.qaFinal} />
-          </div>
-          {run.verdicts.length > 0 && (
+          {run.thinking && (
             <>
-              <div className="label">Editor’s ruling on each QA flag</div>
-              <ul className="qa-list">
-                {run.verdicts.map((v, i) => (
-                  <li key={i}>
-                    <span className={"badge " + (v.action === "fixed" ? "ok" : "info")}>{v.action}</span>
-                    <span>
-                      {v.check}
-                      <br />
-                      <span className="muted small">{v.reason}</span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <div className="label">Reasoning summary (last step)</div>
+              <div className="thinking" style={{ maxHeight: 260 }}>
+                {run.thinking}
+              </div>
             </>
           )}
-          <div className="panel-head">
-            <div className="label">Checks on the final text</div>
-            <label className="check small">
-              <input type="checkbox" checked={showOk} onChange={(e) => setShowOk(e.target.checked)} /> show passed checks
-            </label>
-          </div>
-          <QAList checks={run.qaFinal} showOk={showOk} />
-        </>
-      )}
-
-      {tab === "open" && open && (
-        <AltPanel
-          lang={lang}
-          alt={open}
-          source={source}
-          terms={terms}
-          swiss={swiss}
-          claudeFinal={done ? run.edited : null}
-          name="Open model"
-          intro={`${openLabel}: our own model, fine-tuned on GMT’s translations and the watchmaking corpus, one pass per paragraph with the termbase hits in the prompt — no editorial review.`}
-          cost={(a) => ` ${(a.ms / 1000).toFixed(1)} s, no API cost.`}
-          promptLabel="Prompt sent to the open model"
-        />
-      )}
-
-      {tab === "deepl" && deepl && (
-        <AltPanel
-          lang={lang}
-          alt={deepl}
-          source={source}
-          terms={terms}
-          swiss={swiss}
-          claudeFinal={done ? run.edited : null}
-          name="DeepL"
-          intro={`${deeplLabel}: DeepL (${lang === "en" ? "EN-GB" : swiss ? "DE-CH" : "DE-DE"}, quality model) with the GMT glossary — the terms GMT’s own translations use consistently —${lang === "en" ? " the GMT English style list, the remaining watchmaking terms as instructions" : ""} and the previous paragraph as context. One pass per paragraph, no editorial review.`}
-          cost={(a) => ` ${(a.ms / 1000).toFixed(1)} s, ${a.chars.toLocaleString("en")} characters (≈ €${((a.chars * 22) / 1e6).toFixed(3)} on DeepL Growth).`}
-          promptLabel="Requests sent to DeepL"
-        />
-      )}
-
-      {tab === "reasoning" && (
-        <div className="thinking" style={{ maxHeight: 420 }}>
-          {run.thinking || "The model’s reasoning summary for the current step appears here while it works."}
-        </div>
-      )}
-
-      {tab === "prompts" &&
-        (run.prompts.length ? (
-          run.prompts.map((p, i) => (
+          {run.prompts.map((p, i) => (
             <details key={i}>
               <summary>
                 {p.title} — {(p.system.length + p.user.length).toLocaleString()} characters
               </summary>
-              <pre>{p.system + "\n\n────────── user ──────────\n\n" + p.user}</pre>
+              <pre>{(p.system ? p.system + "\n\n────────── user ──────────\n\n" : "") + p.user}</pre>
             </details>
-          ))
-        ) : (
-          <p className="muted small">The exact prompts sent to Claude appear here.</p>
-        ))}
-
-      {tab === "cost" && done && (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Call</th>
-                <th className="num">Input</th>
-                <th className="num">Cached</th>
-                <th className="num">Output</th>
-                <th className="num">Time</th>
-              </tr>
-            </thead>
-            <tbody>
-              {run.usage.map((u, i) => (
-                <tr key={i}>
-                  <td>{run.prompts[i]?.title.replace(" prompt", "") ?? i + 1}</td>
-                  <td className="num">{(u.input + u.cacheWrite).toLocaleString()}</td>
-                  <td className="num">{u.cacheRead.toLocaleString()}</td>
-                  <td className="num">{u.output.toLocaleString()}</td>
-                  <td className="num">{(u.ms / 1000).toFixed(0)} s</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p className="muted small">
-            Model {run.usage[0]?.model}. Estimated at list price ($4 / $20 per million input / output tokens): ≈ ${usd.toFixed(3)}. Output includes the
-            model’s reasoning tokens.
-          </p>
-        </div>
+          ))}
+          {done && (
+            <p className="muted small" style={{ margin: 0 }}>
+              {run.usage.length} Claude call(s), ≈ ${usd.toFixed(3)} at list price ({run.usage.reduce((s, u) => s + u.input + u.cacheWrite + u.cacheRead, 0).toLocaleString()} tokens in,{" "}
+              {run.usage.reduce((s, u) => s + u.output, 0).toLocaleString()} out, reasoning included)
+              {run.deeplChars ? ` · DeepL ${run.deeplChars.toLocaleString("en")} characters (≈ €${((run.deeplChars * 22) / 1e6).toFixed(3)})` : ""}.
+            </p>
+          )}
+        </details>
       )}
     </section>
   );
 }
 
-function QAInline({ checks }: { checks: QACheck[] }) {
-  const s = summarize(checks);
-  return (
-    <span>
-      <span className={"badge " + (s.errors ? "error" : "ok")}>{s.errors} errors</span>{" "}
-      <span className={"badge " + (s.warnings ? "warn" : "ok")}>{s.warnings} warnings</span>{" "}
-      {checks
-        .filter((c) => c.severity !== "ok")
-        .slice(0, 3)
-        .map((c, i) => (
-          <span key={i} className="muted">
-            · {c.message}{" "}
-          </span>
-        ))}
-    </span>
-  );
-}
-
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
+function CopyButton({ text, copied, setCopied }: { text: string; copied: boolean; setCopied: (v: boolean) => void }) {
   return (
     <button
       className="btn ghost small"
@@ -375,58 +299,5 @@ function CopyButton({ text }: { text: string }) {
     >
       {copied ? "Copied" : "Copy"}
     </button>
-  );
-}
-
-/** A comparison system's output: text, QA checks and the word diff against Claude's final. */
-function AltPanel(props: {
-  lang: Lang;
-  alt: OpenRun;
-  source: string;
-  terms: TermHit[];
-  swiss: boolean;
-  claudeFinal: string | null;
-  name: string;
-  intro: string;
-  cost: (a: OpenRun) => string;
-  promptLabel: string;
-}) {
-  const { lang, alt, source, terms, swiss, claudeFinal, name } = props;
-  const altDone = alt.status === "done";
-  const qa = useMemo(() => (altDone ? runQA(source, alt.text, lang, terms, swiss) : []), [altDone, alt.text, source, lang, terms, swiss]);
-  const diff = useMemo(() => (altDone && claudeFinal ? diffWords(alt.text, claudeFinal) : []), [altDone, alt.text, claudeFinal]);
-  return (
-    <>
-      <p className="muted small" style={{ margin: 0 }}>
-        {props.intro} {alt.status === "running" && "Translating…"}
-        {altDone && props.cost(alt)}
-      </p>
-      {alt.error && <div className="notice err">{alt.error}</div>}
-      <div className="output" lang={lang}>
-        {alt.live || <span className="muted">Waiting for {name}…</span>}
-      </div>
-      {altDone && (
-        <>
-          <div className="label">QA checks on {name}’s text</div>
-          <QAInline checks={qa} />
-        </>
-      )}
-      {altDone && claudeFinal && (
-        <>
-          <div className="label">
-            {name} → Claude final ({Math.round(editRate(diff) * 100)}% of words differ)
-          </div>
-          <div className="diff" lang={lang}>
-            {diff.map((p, i) => (p.op === "=" ? <span key={i}>{p.text}</span> : p.op === "-" ? <del key={i}>{p.text}</del> : <ins key={i}>{p.text}</ins>))}
-          </div>
-        </>
-      )}
-      {alt.prompts.length > 0 && (
-        <details>
-          <summary className="small">{props.promptLabel}</summary>
-          <pre>{alt.prompts.map((p) => `# ${p.title}\n${p.user}`).join("\n\n")}</pre>
-        </details>
-      )}
-    </>
   );
 }
