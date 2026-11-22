@@ -205,6 +205,10 @@ export async function runLanguage(opts: {
   origin?: "desk" | "compare";
   /** cost of calls shared by the languages of this run (term pruning), already divided */
   sharedUsd?: number;
+  /** evaluation: start from these drafts (one per part) instead of drafting, so two editors can be compared on the same draft */
+  drafts?: string[];
+  /** evaluation: do not record this run in the shared store */
+  silent?: boolean;
 }): Promise<void> {
   const { lang, text, terms, effort, swiss, signal, patch, system = "claude", variant = {}, dropTerms = [] } = opts;
   const off = variant.off ?? [];
@@ -286,7 +290,8 @@ export async function runLanguage(opts: {
       patch((r) => ({ ...r, liveLabel: `${who} ${system === "fusion" ? "are" : "is"} drafting${part}`, thinking: "" }));
       let draft: string;
       let alt: string | null = null;
-      if (system === "deepl" || system === "deepl-claude") draft = await single("deepl");
+      if (opts.drafts?.[i] !== undefined) draft = opts.drafts[i];
+      else if (system === "deepl" || system === "deepl-claude") draft = await single("deepl");
       else if (system === "open") draft = await single("open");
       else {
         const [d, a] = await Promise.all([
@@ -394,7 +399,7 @@ export async function runLanguage(opts: {
       qaDraft: { errors: sd.errors, warnings: sd.warnings },
       qaFinal: { errors: sf.errors, warnings: sf.warnings },
     };
-    logEvent("run", { ...trace, effort, swiss, origin: opts.origin ?? "desk" });
+    if (!opts.silent) logEvent("run", { ...trace, effort, swiss, origin: opts.origin ?? "desk" });
     patch((r) => ({
       ...r,
       status: "done",

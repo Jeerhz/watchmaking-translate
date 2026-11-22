@@ -78,6 +78,8 @@ export default function Compare() {
   const ctl = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    // scripted evaluations drive the same pipeline code from the browser console
+    (window as unknown as { gmtDesk?: object }).gmtDesk = { runLanguage, emptyRun, pruneTerms };
     setRater(rememberedName());
     try {
       const sent = localStorage.getItem("gmt-compare-text");
