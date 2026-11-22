@@ -260,3 +260,5 @@ mark.err-span.major { background: var(--err-soft); border-bottom: 2px solid var(
 /* GMT's logo is black on transparent: invert it on dark surfaces */
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .gmt-logo { filter: invert(1); } }
 :root[data-theme="dark"] .gmt-logo { filter: invert(1); }
+
+a.btn { text-decoration: none; display: inline-block; }
