@@ -7,6 +7,7 @@ alphanumeric tokens (elisions such as ``l'`` split off), and a light plural stem
 
 import re
 import unicodedata
+from collections.abc import Iterable
 from functools import lru_cache
 
 _TOKEN = re.compile(r"[a-z0-9œæ]+")
@@ -21,6 +22,46 @@ FR_STOPWORDS: frozenset[str] = frozenset(
     s sa sans se ses si sien son sont sous sur t ta te tes toi ton toujours tous tout toute
     toutes tres tu un une unes uns vers via vos votre vous y""".split()
 )
+
+
+# English as the source language: function words, and a plural stemmer mirrored in
+# webapp/lib/textnorm.ts (stemEn).
+EN_STOPWORDS: frozenset[str] = frozenset(
+    """a about after again all also an and any are as at be been before being between both but
+    by can could did do does for from had has have he her here him his how i if in into is it
+    its just like may more most much my no nor not of on once one only or other our out over
+    own same she should so some such than that the their them then there these they this those
+    through to too under up very was we were what when where which while who whom why will
+    with would you your""".split()
+)
+
+
+def stem_en(token: str) -> str:
+    """Strip English plural marks: watches→watch, complications→complication, bodies→body."""
+    if len(token) > 4 and token.endswith("ies"):
+        return token[:-3] + "y"
+    if len(token) > 4 and token.endswith(("ches", "shes", "xes", "sses", "zes")):
+        return token[:-2]
+    if len(token) > 3 and token.endswith("s") and not token.endswith(("ss", "us", "is")):
+        return token[:-1]
+    return token
+
+
+def tokens_en(text: str) -> list[str]:
+    return [stem_en(m) for m in _TOKEN.findall(fold(text))]
+
+
+def generic_english(sentences: Iterable[str], max_df: float = 0.015) -> frozenset[str]:
+    """Stemmed words present in more than ``max_df`` of English sentences (watch, time, case…)."""
+    from collections import defaultdict
+
+    df: dict[str, int] = defaultdict(int)
+    n = 0
+    for s in sentences:
+        n += 1
+        for tok in {stem_en(m) for m in _TOKEN.findall(fold(s))}:
+            df[tok] += 1
+    return frozenset(t for t, c in df.items() if c / max(n, 1) > max_df)
 
 
 @lru_cache(maxsize=4096)

@@ -3,7 +3,7 @@
 // pass (step "fix"), which decides whether it is a real error or a false alarm.
 
 import { splitParagraphs, splitSentences } from "./textnorm";
-import type { Lang, TermHit } from "./types";
+import { LANG_NAME, type Lang, type Src, type TermHit } from "./types";
 
 export type Severity = "error" | "warn" | "ok";
 export type CheckKind = "terminology" | "figures" | "references" | "structure" | "untranslated" | "typography";
@@ -66,7 +66,7 @@ function containsTerm(out: Tok[], term: string): boolean {
 }
 
 /** Is this termbase hit one the checks enforce? Multi-word terms, and single words with a GMT
- *  house-usage rule (other single words are often ordinary French: "bleu nuit"). */
+ *  house-usage rule (other single words are often ordinary words: "bleu nuit"). */
 export function enforced(h: TermHit, lang: Lang): boolean {
   const targets = h[lang];
   return targets.length > 0 && (h.key.includes(" ") || targets[0][2] <= 0);
@@ -101,7 +101,11 @@ export function numbers(text: string): string[] {
 }
 
 const REFERENCE = /\b(?=[\w./-]*\d)(?=[\w./-]*[A-Za-z])[A-Za-z0-9][\w./-]*[A-Za-z0-9]\b/g;
-const FRENCH_TELLS = new Set(["avec", "dans", "pour", "une", "les", "sur", "qui", "cette", "leur", "sont", "est", "aux", "très"]);
+/** Function words that give away a sentence left in the source language. */
+const TELLS: Record<Src, Set<string>> = {
+  fr: new Set(["avec", "dans", "pour", "une", "les", "sur", "qui", "cette", "leur", "sont", "est", "aux", "très"]),
+  en: new Set(["the", "and", "with", "of", "is", "are", "this", "that", "which", "from", "its", "has", "for"]),
+};
 
 const TYPO: Record<Lang, [RegExp, string][]> = {
   en: [
@@ -122,9 +126,21 @@ const TYPO: Record<Lang, [RegExp, string][]> = {
     [/—/, "Geviertstrich — Hausstil: Halbgeviertstrich mit Leerzeichen ( – )"],
     [/\s[:;!?](\s|$)/, "Leerzeichen vor : ; ! ? (französische Typografie)"],
   ],
+  fr: [
+    [/"/, "guillemets droits — GMT écrit « … »"],
+    [/[“”]/, "guillemets anglais “ ” — GMT écrit « … »"],
+    [/«\S|\S»/, "pas d’espace à l’intérieur des guillemets « … »"],
+    [/[\p{L}\d»)][;!?]/u, "pas d’espace avant ; ! ? (typographie anglaise)"],
+    [/\p{L}:(\s|$)/u, "pas d’espace avant les deux-points (typographie anglaise)"],
+    [/—/, "tiret cadratin — GMT utilise le demi-cadratin avec espaces ( – )"],
+    [/\d(mm)\b/, "« 41mm » — GMT écrit « 41 mm » avec une espace"],
+    [/\b\d{1,3},\d{3}\b/, "milliers séparés par une virgule (format anglais) — GMT écrit 28'800"],
+    [/\b\d+\.\d{1,2}\b(?![.\d])/, "point décimal (format anglais) — virgule en français"],
+    [/\bo[’']clock\b/i, "« o’clock » laissé en anglais — « à 6 h »"],
+  ],
 };
 
-export function runQA(source: string, output: string, lang: Lang, terms: TermHit[], swiss = false): QACheck[] {
+export function runQA(source: string, output: string, lang: Lang, terms: TermHit[], swiss = false, src: Src = "fr"): QACheck[] {
   const checks: QACheck[] = [];
   const outWords = toks(output);
 
@@ -162,7 +178,9 @@ export function runQA(source: string, output: string, lang: Lang, terms: TermHit
   }
 
   // 3. references, calibres, ™/® marks
-  const refs = [...new Set([...source.matchAll(REFERENCE)].map((m) => m[0]))].filter((r) => !/^\d+(h|mm|m|cm|g|ct)$/i.test(r));
+  const refs = [...new Set([...source.matchAll(REFERENCE)].map((m) => m[0]))].filter((r) => !/^\d+(h|mm|m|cm|g|ct)$/i.test(r))
+    // English compounds of a number and a word ("18-carat", "70-hour") are not references
+    .filter((r) => !(src === "en" && /^\d+(?:[.,]\d+)?-[a-z]+(?:-[a-z]+)*$/.test(r)));
   const lost = refs.filter((r) => !output.includes(r));
   if (lost.length) {
     const message = `references not found verbatim: ${lost.join(", ")}`;
@@ -186,12 +204,12 @@ export function runQA(source: string, output: string, lang: Lang, terms: TermHit
     checks.push({ kind: "structure", severity: "ok", message: `${ps} paragraph(s) mirrored` });
   }
 
-  // 5. untranslated French
+  // 5. text left in the source language
   const leftovers = splitParagraphs(output)
     .flatMap(splitSentences)
-    .filter((s) => new Set((s.toLowerCase().match(/\p{L}+/gu) ?? []).filter((w) => FRENCH_TELLS.has(w))).size >= 3);
+    .filter((s) => new Set((s.toLowerCase().match(/\p{L}+/gu) ?? []).filter((w) => TELLS[src].has(w))).size >= 3);
   for (const s of leftovers) {
-    const message = `sentence looks French: “${s.slice(0, 90)}${s.length > 90 ? "…" : ""}”`;
+    const message = `sentence looks ${LANG_NAME[src]}: “${s.slice(0, 90)}${s.length > 90 ? "…" : ""}”`;
     checks.push({ kind: "untranslated", severity: "error", message, flag: `Untranslated: ${message}.` });
   }
 

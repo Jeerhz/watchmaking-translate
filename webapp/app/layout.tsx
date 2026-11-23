@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "GMT Translation Desk",
-  description: "French watchmaking copy into English and German — terminology, references, editing and validation.",
+  description: "Watchmaking copy from French into English and German, and from English into French and German — terminology, references, editing and validation.",
   robots: { index: false, follow: false },
 };
 

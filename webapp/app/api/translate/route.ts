@@ -13,9 +13,10 @@ import {
   REPAIR_USER,
   fields,
   fill,
+  forSource,
   renderErrors,
 } from "@/lib/server/prompts";
-import { LANGS, type Step, type StreamEvent, type TranslateRequest } from "@/lib/types";
+import { TARGETS, isSrc, type Src, type Step, type StreamEvent, type TranslateRequest } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -28,7 +29,8 @@ const client = new Anthropic();
 export async function POST(req: Request): Promise<Response> {
   const body = (await req.json()) as TranslateRequest;
   const { step, lang, source } = body;
-  if (!LANGS.includes(lang) || !STEPS.includes(step) || !source?.trim()) {
+  const src: Src = body.src ?? "fr";
+  if (!isSrc(src) || !TARGETS[src].includes(lang) || !STEPS.includes(step) || !source?.trim()) {
     return Response.json({ error: "bad request" }, { status: 400 });
   }
   if (source.split(/\s+/).length > MAX_WORDS) {
@@ -40,12 +42,14 @@ export async function POST(req: Request): Promise<Response> {
 
   const { bundle } = getEngine();
   const off = body.off ?? [];
-  const found = evidence(source, lang);
+  const found = evidence(source, lang, src);
   const drop = new Set(body.dropTerms ?? []);
   const hits = off.includes("termbase") ? [] : found.hits.filter((h) => !drop.has(h.key));
   const examples = off.includes("examples") ? [] : found.examples;
-  const f = fields(source, lang, hits, examples, { context: body.context, article: body.article, decisions: body.decisions }, Boolean(body.swiss), off);
-  const p = bundle.prompts;
+  const f = fields(source, lang, hits, examples, { context: body.context, article: body.article, decisions: body.decisions }, Boolean(body.swiss), off, src);
+  // templates are renamed for the source language first, then filled
+  const p = Object.fromEntries(Object.entries(bundle.prompts).map(([k, v]) => [k, forSource(v, src)])) as typeof bundle.prompts;
+  const [diagnoseSystem, diagnoseUser, repairSystem, repairUser] = [DIAGNOSE_SYSTEM, DIAGNOSE_USER, REPAIR_SYSTEM, REPAIR_USER].map((t) => forSource(t, src));
   const issues = (body.issues ?? []).map((i) => `- ${i}`).join("\n");
   let system: string;
   let user: string;
@@ -55,13 +59,13 @@ export async function POST(req: Request): Promise<Response> {
     user = fill(p.translate_user, f);
   } else if (step === "diagnose") {
     const notes = [...editorNotes(body, "diagnose"), ...(issues ? [`<qa_flags>\n${issues}\n</qa_flags>`] : [])];
-    system = fill(DIAGNOSE_SYSTEM, f);
-    user = fill(DIAGNOSE_USER, { ...f, draft: body.draft!, notes: notes.length ? "\n" + notes.join("\n\n") + "\n" : "" });
+    system = fill(diagnoseSystem, f);
+    user = fill(diagnoseUser, { ...f, draft: body.draft!, notes: notes.length ? "\n" + notes.join("\n\n") + "\n" : "" });
     schema = DIAGNOSE_SCHEMA;
   } else if (step === "repair") {
     const notes = editorNotes(body, "repair");
-    system = fill(REPAIR_SYSTEM, f);
-    user = fill(REPAIR_USER, { ...f, draft: body.draft!, errors: renderErrors(body.errors ?? []), notes: notes.length ? "\n" + notes.join("\n\n") + "\n" : "" });
+    system = fill(repairSystem, f);
+    user = fill(repairUser, { ...f, draft: body.draft!, errors: renderErrors(body.errors ?? []), notes: notes.length ? "\n" + notes.join("\n\n") + "\n" : "" });
     schema = REPAIR_SCHEMA;
   } else if (step === "review") {
     system = fill(p.review_system, f);

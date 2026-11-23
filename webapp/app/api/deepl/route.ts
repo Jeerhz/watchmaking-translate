@@ -2,7 +2,7 @@
 // GET reports whether DEEPL_API_KEY is set.
 
 import { buildRequest, DEEPL, translateDeepL } from "@/lib/server/deepl";
-import { LANGS, type Lang, type StreamEvent } from "@/lib/types";
+import { TARGETS, isSrc, type Lang, type Src, type StreamEvent } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -15,17 +15,18 @@ export async function GET(): Promise<Response> {
 }
 
 export async function POST(req: Request): Promise<Response> {
-  const { lang, source, swiss = true, context = null } = (await req.json()) as {
+  const { lang, source, swiss = true, context = null, src = "fr" } = (await req.json()) as {
     lang: Lang;
+    src?: Src;
     source: string;
     swiss?: boolean;
     context?: string | null;
   };
-  if (!LANGS.includes(lang) || !source?.trim()) return Response.json({ error: "bad request" }, { status: 400 });
+  if (!isSrc(src) || !TARGETS[src].includes(lang) || !source?.trim()) return Response.json({ error: "bad request" }, { status: 400 });
   if (source.split(/\s+/).length > MAX_WORDS) return Response.json({ error: `text longer than ${MAX_WORDS} words` }, { status: 413 });
   if (!DEEPL.configured) return Response.json({ error: "DeepL not configured" }, { status: 503 });
 
-  const request = buildRequest(source, lang, swiss, context);
+  const request = buildRequest(source, lang, swiss, context, src);
   const started = Date.now();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {

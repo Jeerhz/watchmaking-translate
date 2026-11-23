@@ -1,28 +1,28 @@
 "use client";
 
-// The reading and editing surface: French | English | German, one row per paragraph, with the
+// The reading and editing surface: source | first target | second target, one row per paragraph, with the
 // termbase terms highlighted in all three. In a translation, green = the approved equivalent,
-// amber = another listed equivalent; in the French, red = a term whose approved equivalent is
+// amber = another listed equivalent; in the source, red = a term whose approved equivalent is
 // missing from a translation.
 
 import { useMemo } from "react";
 import { enforced, termUsage, type TermUse } from "@/lib/qa";
 import { splitParagraphs } from "@/lib/textnorm";
-import type { Lang, TermHit } from "@/lib/types";
+import { LANG_TITLE as TITLE, TARGETS, type Lang, type Src, type TermHit } from "@/lib/types";
 import { marked, paragraphOffsets, type Mark } from "./marks";
 import type { LangRun } from "./run";
 
-const LANGS: Lang[] = ["en", "de"];
-const TITLE: Record<Lang, string> = { en: "English", de: "Deutsch" };
 
 export default function AlignedGrid(props: {
   source: string;
+  src: Src;
   terms: TermHit[];
   runs: Record<Lang, LangRun>;
   editing: Record<Lang, boolean>;
   onEdit: (lang: Lang, text: string) => void;
 }) {
-  const { source, terms, runs, editing } = props;
+  const { source, terms, runs, editing, src } = props;
+  const LANGS = TARGETS[src];
   const srcParas = useMemo(() => splitParagraphs(source), [source]);
   const srcOffs = useMemo(() => paragraphOffsets(source, srcParas), [source, srcParas]);
 
@@ -71,7 +71,7 @@ export default function AlignedGrid(props: {
     <div className="aligned" role="table" aria-label="Source and translations, paragraph by paragraph">
       <div className="aligned-row head" role="row">
         <div className="label" role="columnheader">
-          Français
+          {TITLE[src]}
         </div>
         {cols.map((c) => (
           <div key={c.lang} className="label" role="columnheader">
@@ -83,7 +83,7 @@ export default function AlignedGrid(props: {
       </div>
       {rows.map((k) => (
         <div key={k} className="aligned-row" role="row">
-          <div className="cell src" lang="fr" role="cell">
+          <div className="cell src" lang={src} role="cell">
             {aligned ? marked(srcParas[k], srcMarks, srcOffs[k]) : marked(source, srcMarks)}
           </div>
           {cols.map((c) => {

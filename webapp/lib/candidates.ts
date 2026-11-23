@@ -19,7 +19,7 @@ export interface Candidate {
 
 export const CANDIDATES: Candidate[] = [
   ...SYSTEMS.filter((s) => s.id !== "claude-legacy").map((s) => ({ id: s.id, label: s.label, help: s.help, group: "system" as const, system: s.id, needs: s.needs })),
-  { id: "gmt", label: "GMT’s published translation", help: "What GMT Magazine printed (samples only), hidden among the systems", group: "reference", needs: "sample" },
+  { id: "gmt", label: "GMT’s published text", help: "What GMT Magazine printed in that language (samples only), hidden among the systems", group: "reference", needs: "sample" },
   { id: "claude~noterms", label: "Claude + editor, no termbase", help: "No glossary in the prompts and no term checks", group: "component", system: "claude", variant: { off: ["termbase"] } },
   { id: "claude~noprune", label: "Claude + editor, unpruned terms", help: "Every termbase match is kept, ordinary words included", group: "component", system: "claude", noPrune: true },
   { id: "claude~noexamples", label: "Claude + editor, no examples", help: "No published sentence pairs in the prompts", group: "component", system: "claude", variant: { off: ["examples"] } },
@@ -63,7 +63,10 @@ export interface JudgedCandidate {
 export interface Judgment {
   rater: string;
   sample: string | null;
-  lang: "en" | "de";
+  lang: "en" | "de" | "fr";
+  /** language of the source text; absent in judgments saved before English sources existed (French) */
+  src?: "fr" | "en";
+  pair?: string;
   blind: boolean;
   source: string;
   best: string | null;

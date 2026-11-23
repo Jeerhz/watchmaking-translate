@@ -137,7 +137,8 @@ Every experiment and what it showed, on one page: [docs/results.md](docs/results
 3–12 points ahead on approved terms, DeepL costs about a tenth; the "diagnose, then repair"
 editor is safer than the previous one, and no editor measurably improves a Claude draft.
 
-**English → French and English → German are required too and are not built yet.**
+**English → French and English → German** are built in the web desk (source switch on the
+Translator and Compare pages) and not measured yet. The batch CLI still translates from French only.
 
 ## Setup
 

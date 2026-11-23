@@ -2,7 +2,7 @@
 
 FR → EN (British) and FR → DE (Swiss) for GMT Magazine / WorldTempus watchmaking copy.
 DeepL details in [deepl-system.md](deepl-system.md). A one-page summary of every result is in
-[results.md](results.md). English as a source (EN → FR, EN → DE) is required too and not built yet.
+[results.md](results.md). English as a source (EN → FR, EN → DE) is built in the web desk and not measured yet (see results.md).
 
 ## The blocks
 

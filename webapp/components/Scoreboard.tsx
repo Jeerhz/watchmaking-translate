@@ -5,15 +5,16 @@
 
 import { useEffect, useState } from "react";
 import type { ComponentRow, Scoreboard as Data, StageRow, SystemRow, ValidationRow } from "@/lib/server/scoreboard";
-import { CATEGORIES, type Lang } from "@/lib/types";
+import { CATEGORIES, pairName } from "@/lib/types";
 
-const LANG: Record<Lang, string> = { en: "English", de: "Deutsch" };
-const ENOUGH = 30; // judgments per language before a difference is worth acting on
+const ENOUGH = 30; // judgments per direction before a difference is worth acting on
 const f = (v: number | null, d = 1) => (v === null ? "—" : v.toFixed(d));
 const pct = (v: number | null) => (v === null ? "—" : `${(v * 100).toFixed(0)} %`);
 
-function byLang<T extends { lang: Lang }>(rows: T[]): [Lang, T[]][] {
-  return (["en", "de"] as Lang[]).map((l) => [l, rows.filter((r) => r.lang === l)] as [Lang, T[]]).filter(([, r]) => r.length);
+/** Rows grouped by direction ("fr>en"), French sources first. */
+function byLang<T extends { lang: string }>(rows: T[]): [string, T[]][] {
+  const pairs = [...new Set(rows.map((r) => r.lang))].sort((a, b) => (a.startsWith("fr") ? 0 : 1) - (b.startsWith("fr") ? 0 : 1) || a.localeCompare(b));
+  return pairs.map((l) => [l, rows.filter((r) => r.lang === l)] as [string, T[]]);
 }
 
 export default function Scoreboard() {
@@ -60,7 +61,7 @@ export default function Scoreboard() {
       <section className="panel">
         <h2 style={{ marginTop: 0 }}>Systems, as rated blind</h2>
         <p className="muted small" style={{ margin: 0 }}>
-          From the Compare page: a 0–100 score per candidate and the error spans raters marked. Under {ENOUGH} judgments per language, read the order as a first impression, not
+          From the Compare page: a 0–100 score per candidate and the error spans raters marked. Under {ENOUGH} judgments per direction, read the order as a first impression, not
           a result.
         </p>
         {data.systems.length ? byLang(data.systems).map(([l, rows]) => <Systems key={l} lang={l} rows={rows} />) : <Empty what="No judgment saved yet. Rate a comparison on the Compare page." />}
@@ -120,13 +121,13 @@ function Few({ n }: { n: number }) {
   return n < ENOUGH ? <span className="badge info" title={`Fewer than ${ENOUGH} judgments`}>few</span> : null;
 }
 
-function Systems({ lang, rows }: { lang: Lang; rows: SystemRow[] }) {
+function Systems({ lang, rows }: { lang: string; rows: SystemRow[] }) {
   return (
     <div className="table-wrap">
       <table>
         <thead>
           <tr>
-            <th>{LANG[lang]}</th>
+            <th>{pairName(lang)}</th>
             <th className="num">Judged</th>
             <th className="num">Mean score (0–100)</th>
             <th className="num">Chosen best</th>
@@ -196,13 +197,13 @@ function Components({ rows }: { rows: ComponentRow[] }) {
   );
 }
 
-function Stages({ lang, rows }: { lang: Lang; rows: StageRow[] }) {
+function Stages({ lang, rows }: { lang: string; rows: StageRow[] }) {
   return (
     <div className="table-wrap">
       <table>
         <thead>
           <tr>
-            <th>{LANG[lang]}</th>
+            <th>{pairName(lang)}</th>
             <th className="num">Runs</th>
             <th className="num">QA flags / 1,000 w: draft → final</th>
             <th className="num">Errors diagnosed / 1,000 w</th>
@@ -246,7 +247,7 @@ function Validations({ rows }: { rows: ValidationRow[] }) {
         <thead>
           <tr>
             <th>System</th>
-            <th>Language</th>
+            <th>Direction</th>
             <th className="num">Validated texts</th>
             <th className="num">Words</th>
             <th className="num">Words changed by the editor</th>
@@ -257,7 +258,7 @@ function Validations({ rows }: { rows: ValidationRow[] }) {
           {rows.map((r) => (
             <tr key={r.system + r.lang}>
               <td>{r.label}</td>
-              <td>{LANG[r.lang]}</td>
+              <td>{pairName(r.lang)}</td>
               <td className="num">{r.n}</td>
               <td className="num">{r.words.toLocaleString("en")}</td>
               <td className="num">

@@ -6,11 +6,11 @@
 
 import setup from "@/lib/deepl-setup.json";
 import { findTerms } from "@/lib/server/engine";
-import type { Lang } from "@/lib/types";
+import type { Lang, Src } from "@/lib/types";
 
 const KEY = process.env.DEEPL_API_KEY ?? "";
 const BASE = KEY.endsWith(":fx") ? "https://api-free.deepl.com" : "https://api.deepl.com";
-const HARD: Record<Lang, Set<string>> = { en: new Set(setup.hard.en), de: new Set(setup.hard.de) };
+const HARD: Record<Lang, Set<string>> = { en: new Set(setup.hard.en), de: new Set(setup.hard.de), fr: new Set() };
 const WATCH = new Set(setup.watch_words);
 
 export const DEEPL = {
@@ -27,12 +27,14 @@ function caseFor(tgt: string, lang: Lang): string {
 }
 
 /** Watchmaking termbase hits the glossary does not cover, as one-term instructions (≤ limit). */
-export function softInstructions(source: string, lang: Lang, swiss: boolean, limit = 5): string[] {
+export function softInstructions(source: string, lang: Lang, swiss: boolean, limit = 5, src: Src = "fr"): string[] {
   const out: string[] = [];
-  for (const h of findTerms(source, lang, 30)) {
-    const fr = h.fr.toLowerCase();
+  for (const h of findTerms(source, lang, 30, src)) {
+    const fr = h.term.toLowerCase();
     if (HARD[lang].has(fr) || HARD[lang].has(h.surface.toLowerCase())) continue;
-    if (!fr.includes(" ") && !WATCH.has(fr)) continue; // everyday words: left to DeepL
+    // everyday words are left to DeepL: one-word terms pass only if they are watchmaking words
+    // (French source) or carry a GMT house rule (English source)
+    if (!fr.includes(" ") && !(src === "fr" ? WATCH.has(fr) : h[lang][0][2] <= 0)) continue;
     let tgt = caseFor(h[lang][0][0], lang);
     if (lang === "de" && swiss) tgt = tgt.replace(/ß/g, "ss");
     out.push(`Translate '${h.surface}' as '${tgt}'.`);
@@ -46,12 +48,35 @@ export interface DeepLRequest {
   soft: string[];
 }
 
-export function buildRequest(source: string, lang: Lang, swiss: boolean, context: string | null): DeepLRequest {
+const TARGET_CODE = (lang: Lang, swiss: boolean): string => (lang === "en" ? "EN-GB" : lang === "fr" ? "FR" : swiss ? "DE-CH" : "DE-DE");
+
+/** English source: the GMT glossary and style list exist for French → English / German only, so
+ *  DeepL gets what was measured to matter most there, the surrounding paragraphs as context, plus
+ *  the termbase's French equivalents as one-term instructions. German gets context only, as for
+ *  a French source. Not measured yet in this direction. */
+function buildFromEnglish(source: string, lang: Lang, swiss: boolean, context: string | null): DeepLRequest {
+  const soft = lang === "fr" ? softInstructions(source, lang, swiss, 5, "en") : [];
+  const body: Record<string, unknown> = {
+    text: [source],
+    source_lang: "EN",
+    target_lang: TARGET_CODE(lang, swiss),
+    model_type: "quality_optimized",
+    preserve_formatting: true,
+    formality: "prefer_more",
+    show_billed_characters: true,
+  };
+  if (soft.length) body.custom_instructions = soft;
+  if (context) body.context = context;
+  return { body, soft };
+}
+
+export function buildRequest(source: string, lang: Lang, swiss: boolean, context: string | null, src: Src = "fr"): DeepLRequest {
+  if (src === "en") return buildFromEnglish(source, lang, swiss, context);
   const soft = lang === "en" ? softInstructions(source, lang, swiss) : [];
   const body: Record<string, unknown> = {
     text: [source],
     source_lang: "FR",
-    target_lang: lang === "en" ? "EN-GB" : swiss ? "DE-CH" : "DE-DE",
+    target_lang: TARGET_CODE(lang, swiss),
     model_type: "quality_optimized",
     preserve_formatting: true,
     formality: "prefer_more",

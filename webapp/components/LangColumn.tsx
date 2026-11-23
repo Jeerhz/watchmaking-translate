@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { cost, diffWords, editRate, rememberedName, rememberName, saveEvent } from "@/lib/client";
 import { runQA, summarize, type QACheck } from "@/lib/qa";
-import { LANG_NAME, type Change, type Lang, type TermHit } from "@/lib/types";
+import { LANG_NAME, LANG_TITLE, pairOf, type Change, type Lang, type Src, type TermHit } from "@/lib/types";
 import StageTrace from "./StageTrace";
 import { STEP_LABEL, SYSTEM_LABEL, type LangRun, type StepId } from "./run";
 
@@ -63,6 +63,7 @@ function QAList({ checks, showOk }: { checks: QACheck[]; showOk: boolean }) {
 
 export default function LangColumn(props: {
   lang: Lang;
+  src: Src;
   run: LangRun;
   source: string;
   terms: TermHit[];
@@ -74,7 +75,7 @@ export default function LangColumn(props: {
   onApprove: (by: string) => void;
   onReopen: () => void;
 }) {
-  const { lang, run, source, terms, swiss } = props;
+  const { lang, run, source, terms, swiss, src } = props;
   const [tab, setTab] = useState<Tab>("changes");
   const [reviewer, setReviewer] = useState("");
   const [showOk, setShowOk] = useState(false);
@@ -86,7 +87,7 @@ export default function LangColumn(props: {
   const touched = done && run.edited !== run.final;
   const humanShare = useMemo(() => (done ? editRate(diffWords(run.final, run.edited)) : null), [done, run.final, run.edited]);
   const draftDiff = useMemo(() => (done ? diffWords(run.draft, run.edited) : []), [done, run.draft, run.edited]);
-  const qaNow = useMemo(() => (touched ? runQA(source, run.edited, lang, terms, swiss) : run.qaFinal), [touched, run.edited, run.qaFinal, source, lang, terms, swiss]);
+  const qaNow = useMemo(() => (touched ? runQA(source, run.edited, lang, terms, swiss, src) : run.qaFinal), [touched, run.edited, run.qaFinal, source, lang, terms, swiss, src]);
   const qa = summarize(qaNow);
   const applied = run.changes.filter((c) => !c.rejected);
   const refused = run.changes.filter((c) => c.rejected);
@@ -103,6 +104,8 @@ export default function LangColumn(props: {
       await saveEvent("validation", {
         reviewer: by,
         lang,
+        src,
+        pair: pairOf(src, lang),
         system: run.system,
         effort: props.effort,
         swiss,
@@ -121,7 +124,7 @@ export default function LangColumn(props: {
   return (
     <section className="panel" aria-label={LANG_NAME[lang] + " translation"}>
       <div className="panel-head">
-        <h2 style={{ margin: 0, fontSize: "1.25rem" }}>{lang === "en" ? "English" : "Deutsch"}</h2>
+        <h2 style={{ margin: 0, fontSize: "1.25rem" }}>{LANG_TITLE[lang]}</h2>
         <span className="muted small">
           {run.status === "running" ? run.liveLabel + "…" : done && run.trace ? `${SYSTEM_LABEL[run.system]} · ${Math.round(run.trace.ms / 1000)} s` : ""}
         </span>

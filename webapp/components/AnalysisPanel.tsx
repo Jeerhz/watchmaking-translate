@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { Analysis, Example, Lang, TermHit } from "@/lib/types";
+import { LANG_NAME, TARGETS, type Analysis, type Example, type Lang, type Src, type TermHit } from "@/lib/types";
 
 const SOURCE_LABEL: Record<string, string> = {
   gmt: "GMT usage",
@@ -11,9 +11,9 @@ const SOURCE_LABEL: Record<string, string> = {
   wikidata: "Wikidata",
 };
 
-function termTitle(h: TermHit): string {
+function termTitle(h: TermHit, src: Src): string {
   const fmt = (lang: Lang) => (h[lang][0] ? `${lang.toUpperCase()}: ${h[lang][0][0]} (${SOURCE_LABEL[h[lang][0][1]] ?? h[lang][0][1]})` : "");
-  return [fmt("en"), fmt("de")].filter(Boolean).join(" · ");
+  return TARGETS[src].map(fmt).filter(Boolean).join(" · ");
 }
 
 function Annotated({ text, a, selected, onSelect }: { text: string; a: Analysis; selected: number | null; onSelect: (i: number) => void }) {
@@ -31,7 +31,7 @@ function Annotated({ text, a, selected, onSelect }: { text: string; a: Analysis;
               if (m.s < cur || m.e > s.end) continue;
               if (m.s > cur) pieces.push(text.slice(cur, m.s));
               pieces.push(
-                <mark key={m.s} className="term" title={termTitle(m.h)}>
+                <mark key={m.s} className="term" title={termTitle(m.h, a.src)}>
                   {text.slice(m.s, m.e)}
                 </mark>,
               );
@@ -73,7 +73,7 @@ export function ExampleItem({ e, lang }: { e: Example; lang: Lang }) {
         )}
         <span className="mono">BM25 {e.score.toFixed(1)}</span>
       </div>
-      <div className="src">{e.fr}</div>
+      <div className="src">{e.src}</div>
       <div className="tgt" lang={lang}>
         {e.tgt}
       </div>
@@ -85,12 +85,12 @@ function References({ a, sentence }: { a: Analysis; sentence: number | null }) {
   const pick = (lang: Lang) => a.references[lang].filter((e) => sentence === null || e.sentence === sentence);
   return (
     <div className="refs">
-      {(["en", "de"] as Lang[]).map((lang) => {
+      {TARGETS[a.src].map((lang) => {
         const list = pick(lang);
         return (
           <div key={lang}>
             <div className="label">
-              {lang === "en" ? "English" : "German"} references<span className="count">{list.length}</span>
+              {LANG_NAME[lang]} references<span className="count">{list.length}</span>
             </div>
             {list.length ? list.map((e, i) => <ExampleItem key={i} e={e} lang={lang} />) : <p className="muted small">No close sentence in the memory for this one.</p>}
           </div>
@@ -100,7 +100,7 @@ function References({ a, sentence }: { a: Analysis; sentence: number | null }) {
   );
 }
 
-function Terms({ terms, dropped }: { terms: TermHit[]; dropped: Dropped[] }) {
+function Terms({ terms, dropped, src }: { terms: TermHit[]; dropped: Dropped[]; src: Src }) {
   if (!terms.length) return <p className="muted small">No termbase entry in this text yet.</p>;
   const why = new Map(dropped.map((d) => [d.key, d.reason]));
   const kept = terms.filter((h) => !why.has(h.key));
@@ -120,9 +120,9 @@ function Terms({ terms, dropped }: { terms: TermHit[]; dropped: Dropped[] }) {
           <div className="fr">
             {h.surface}
             {h.count > 1 && <span className="count">×{h.count}</span>}
-            {h.surface.toLowerCase() !== h.fr.toLowerCase() && <span className="muted small"> · entry “{h.fr}”</span>}
+            {h.surface.toLowerCase() !== h.term.toLowerCase() && <span className="muted small"> · entry “{h.term}”</span>}
           </div>
-          {(["en", "de"] as Lang[]).map((lang) => {
+          {TARGETS[src].map((lang) => {
             const t = h[lang];
             const homonyms = t.length > 1 && new Set(t.map((x) => x[3])).size > 1;
             return (
@@ -169,7 +169,7 @@ export default function AnalysisPanel({
   const [sentence, setSentence] = useState<number | null>(null);
   const gone = new Set(dropped.map((d) => d.key));
   const a = analysis ? { ...analysis, terms: analysis.terms.filter((h) => !gone.has(h.key)) } : null;
-  const nRefs = a ? a.references.en.length + a.references.de.length : 0;
+  const nRefs = a ? TARGETS[a.src].reduce((n, l) => n + a.references[l].length, 0) : 0;
   const sel = a && sentence !== null && sentence < a.sentences.length ? sentence : null;
   return (
     <section className="panel" aria-labelledby="anaLabel">
@@ -196,7 +196,7 @@ export default function AnalysisPanel({
         ))}
       </div>
       {!a ? (
-        <p className="muted small">Type or paste French text.</p>
+        <p className="muted small">Type or paste the source text.</p>
       ) : tab === "annotated" ? (
         <>
           <p className="muted small" style={{ margin: 0 }}>
@@ -207,7 +207,7 @@ export default function AnalysisPanel({
           {sel !== null && <References a={a} sentence={sel} />}
         </>
       ) : tab === "terms" ? (
-        <Terms terms={analysis?.terms ?? []} dropped={dropped} />
+        <Terms terms={analysis?.terms ?? []} dropped={dropped} src={a.src} />
       ) : (
         <div style={{ maxHeight: 520, overflow: "auto" }}>
           <References a={a} sentence={null} />

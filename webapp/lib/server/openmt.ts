@@ -8,14 +8,15 @@ import { findTerms } from "@/lib/server/engine";
 import type { Lang } from "@/lib/types";
 
 // "de-ch" = GMT's own German (Swiss: ss, «»), as in the magazine's German edition
-export type OpenTarget = Lang | "de-ch";
+export type OpenLang = Exclude<Lang, "fr">; // trained on French sources only
+export type OpenTarget = OpenLang | "de-ch";
 const LANG_NAMES: Record<OpenTarget, string> = {
   en: "British English",
   de: "German",
   "de-ch": "Swiss Standard German (ss, never ß; «» quotes)",
 };
 
-export const openTarget = (lang: Lang, swiss: boolean): OpenTarget => (lang === "de" && swiss ? "de-ch" : lang);
+export const openTarget = (lang: OpenLang, swiss: boolean): OpenTarget => (lang === "de" && swiss ? "de-ch" : lang);
 
 export const OPEN_MT = {
   url: process.env.OPEN_MT_URL?.replace(/\/$/, "") ?? "",
@@ -24,7 +25,7 @@ export const OPEN_MT = {
   label: process.env.OPEN_MT_LABEL ?? "Gemma 4 E4B · GMT fine-tune",
 };
 
-export function openPrompt(source: string, lang: Lang, swiss = false): { user: string; hints: [string, string][] } {
+export function openPrompt(source: string, lang: OpenLang, swiss = false): { user: string; hints: [string, string][] } {
   const target = openTarget(lang, swiss);
   const hints = findTerms(source, lang, 10).map((h): [string, string] => [
     h.surface,

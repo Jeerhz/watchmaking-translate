@@ -1,13 +1,31 @@
 // Shapes shared by the API routes and the client.
 
-export type Lang = "en" | "de";
-export const LANGS: Lang[] = ["en", "de"];
-export const LANG_NAME: Record<Lang, string> = { en: "English", de: "German" };
+/** A language the desk translates into. */
+export type Lang = "en" | "de" | "fr";
+/** A language the desk translates from. */
+export type Src = "fr" | "en";
+export const SOURCES: Src[] = ["fr", "en"];
+/** The two target languages of each source language, in display order. */
+export const TARGETS: Record<Src, [Lang, Lang]> = { fr: ["en", "de"], en: ["fr", "de"] };
+export const LANGS: Lang[] = ["en", "de", "fr"];
+export const LANG_NAME: Record<Lang, string> = { en: "English", de: "German", fr: "French" };
+/** Each language's own name, for column headings. */
+export const LANG_TITLE: Record<Lang, string> = { en: "English", de: "Deutsch", fr: "Français" };
+export const isSrc = (x: unknown): x is Src => x === "fr" || x === "en";
+/** One value per target language. */
+export const perLang = <T,>(make: (lang: Lang) => T): Record<Lang, T> => ({ en: make("en"), de: make("de"), fr: make("fr") });
+/** "fr>en": the key under which runs and ratings of one direction are pooled. */
+export const pairOf = (src: Src, lang: Lang): string => `${src}>${lang}`;
+export const pairName = (pair: string): string => {
+  const [s, l] = pair.split(">") as [Lang, Lang];
+  return `${LANG_NAME[s] ?? s} → ${LANG_NAME[l] ?? l}`;
+};
 export type Effort = "high" | "xhigh" | "max";
 
 /** [term, source, priority, definition] as exported by trad_gmt.mt.export */
 export type TargetRow = [string, string, number, string | null];
 
+/** A termbase entry as stored in the bundle: keyed on the French designation. */
 export interface GlossaryEntry {
   fr: string;
   key: string[];
@@ -15,19 +33,23 @@ export interface GlossaryEntry {
   de: TargetRow[];
 }
 
-/** One French designation found in the text, with every occurrence's offsets. */
+/** One source-language designation found in the text, with every occurrence's offsets.
+ *  `term` is the termbase entry (French or English, as the source is); the equivalents of the
+ *  source language itself are empty. */
 export interface TermHit {
   key: string;
-  fr: string;
+  term: string;
   surface: string;
   count: number;
   spans: [number, number][];
   en: TargetRow[];
   de: TargetRow[];
+  fr: TargetRow[];
 }
 
 export interface Example {
-  fr: string;
+  /** the published sentence in the source language */
+  src: string;
   tgt: string;
   source: string;
   label: string;
@@ -38,6 +60,7 @@ export interface Example {
 }
 
 export interface Analysis {
+  src: Src;
   sentences: { index: number; paragraph: number; text: string; start: number; end: number }[];
   terms: TermHit[];
   references: Record<Lang, Example[]>;
@@ -98,17 +121,19 @@ export type Step = "draft" | "diagnose" | "repair" | "review" | "fix";
 export type Off = "termbase" | "examples" | "style";
 
 export interface Decision {
-  fr: string;
+  src: string;
   tgt: string;
 }
 
 export interface TranslateRequest {
   step: Step;
   lang: Lang;
+  /** language of the source text (default: French) */
+  src?: Src;
   source: string;
   /** end of the translation so far (previous parts of the same article) */
   context?: string | null;
-  /** the whole French article, when the source is only a part of it */
+  /** the whole source article, when the source is only a part of it */
   article?: string | null;
   /** term choices already made earlier in this article — to be reused */
   decisions?: Decision[];

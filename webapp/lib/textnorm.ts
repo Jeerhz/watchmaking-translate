@@ -1,4 +1,4 @@
-// French matching normalisation — mirrors trad_gmt/mt/textnorm.py and the sentence splitter
+// Matching normalisation (French, and English when it is the source) — mirrors trad_gmt/mt/textnorm.py and the sentence splitter
 // of trad_gmt/text.py, so the app retrieves the same glossary hits and examples as the CLI.
 
 const foldCache = new Map<string, string>();
@@ -26,10 +26,23 @@ export function stem(t: string): string {
   return t;
 }
 
+/** Strip English plural marks: watches→watch, complications→complication, bodies→body.
+ *  Mirrors stem_en in trad_gmt/mt/textnorm.py. */
+export function stemEn(t: string): string {
+  if (t.length > 4 && t.endsWith("ies")) return t.slice(0, -3) + "y";
+  if (t.length > 4 && /(ch|sh|x|ss|z)es$/.test(t)) return t.slice(0, -2);
+  if (t.length > 3 && t.endsWith("s") && !/(ss|us|is)$/.test(t)) return t.slice(0, -1);
+  return t;
+}
+
+/** The plural stemmer of a source language. */
+export const stemmer = (src: "fr" | "en" = "fr"): ((t: string) => string) => (src === "en" ? stemEn : stem);
+
 const TOKEN = /[a-z0-9œæ]+/g;
 
 /** Stemmed tokens with their [start, end) offsets in the original text (UTF-16 units). */
-export function tokenSpans(text: string): [string, number, number][] {
+export function tokenSpans(text: string, src: "fr" | "en" = "fr"): [string, number, number][] {
+  const st = stemmer(src);
   const chars = Array.from(text.replace(/’/g, "'"));
   const folded = chars.map(foldChar);
   const starts: number[] = [];
@@ -46,16 +59,17 @@ export function tokenSpans(text: string): [string, number, number][] {
   const out: [string, number, number][] = [];
   for (const m of folded.join("").matchAll(TOKEN)) {
     const s = m.index ?? 0;
-    out.push([stem(m[0]), starts[idx[s]], starts[idx[s + m[0].length]]]);
+    out.push([st(m[0]), starts[idx[s]], starts[idx[s + m[0].length]]]);
   }
   return out;
 }
 
-export function contentTokens(text: string, stop: Set<string>): string[] {
+export function contentTokens(text: string, stop: Set<string>, src: "fr" | "en" = "fr"): string[] {
+  const st = stemmer(src);
   const out: string[] = [];
   for (const m of fold(text).matchAll(TOKEN)) {
     const t = m[0];
-    if (!stop.has(t) && t.length > 1) out.push(stem(t));
+    if (!stop.has(t) && t.length > 1) out.push(st(t));
   }
   return out;
 }

@@ -13,7 +13,7 @@ export const RECIPE: RecipeRow[] = [
   {
     part: "Term detection",
     model: "Rule: accent-folded longest match",
-    role: "Finds termbase terms in the French; gives the approved EN/DE equivalent",
+    role: "Finds termbase terms in the source text (French, or English through the termbase’s English side); gives the approved equivalents in the two target languages",
     training: "None",
     data: "4,932 French keys: GMT usage › FH Berner › Patek › FHH › Wikidata",
   },

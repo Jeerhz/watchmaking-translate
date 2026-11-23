@@ -1,8 +1,8 @@
 // Translation by the fine-tuned open model, streamed as the same NDJSON events as
 // /api/translate. GET reports whether the model is configured (OPEN_MT_URL + token).
 
-import { OPEN_MT, openPrompt, openTarget, type OpenTarget } from "@/lib/server/openmt";
-import { LANGS, type Lang, type StreamEvent } from "@/lib/types";
+import { OPEN_MT, openPrompt, openTarget, type OpenLang, type OpenTarget } from "@/lib/server/openmt";
+import type { StreamEvent } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -14,8 +14,8 @@ export async function GET(): Promise<Response> {
 }
 
 export async function POST(req: Request): Promise<Response> {
-  const { lang, source, swiss = false } = (await req.json()) as { lang: Lang; source: string; swiss?: boolean };
-  if (!LANGS.includes(lang) || !source?.trim()) return Response.json({ error: "bad request" }, { status: 400 });
+  const { lang, source, swiss = false } = (await req.json()) as { lang: OpenLang; source: string; swiss?: boolean };
+  if ((lang !== "en" && lang !== "de") || !source?.trim()) return Response.json({ error: "bad request" }, { status: 400 });
   if (source.split(/\s+/).length > MAX_WORDS) {
     return Response.json({ error: `paragraph longer than ${MAX_WORDS} words` }, { status: 413 });
   }

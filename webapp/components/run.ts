@@ -17,8 +17,10 @@ import {
   type Diagnosis,
   type Effort,
   type ErrorSeverity,
+  pairOf,
   type Lang,
   type Off,
+  type Src,
   type TermHit,
   type Usage,
   type Verdict,
@@ -39,14 +41,16 @@ export const STEP_LABEL: Record<StepId, string> = {
 /** A whole translation system: who drafts and who edits. */
 export type SystemId = "claude" | "deepl-claude" | "fusion" | "deepl" | "open" | "claude-legacy";
 
-export const SYSTEMS: { id: SystemId; label: string; help: string; needs?: "deepl" | "open" }[] = [
+export const SYSTEMS: { id: SystemId; label: string; help: string; needs?: "deepl" | "open"; sources?: Src[] }[] = [
   { id: "claude", label: "Claude + editor", help: "Claude drafts with GMT’s terms, examples and style guide; the editor diagnoses the errors, then repairs only those" },
   { id: "deepl-claude", label: "DeepL + Claude editor", help: "DeepL drafts (GMT glossary, context); Claude’s editor diagnoses and repairs the draft", needs: "deepl" },
   { id: "fusion", label: "Claude + DeepL, one editor", help: "Both draft; the editor checks Claude’s draft with DeepL’s version beside it", needs: "deepl" },
   { id: "deepl", label: "DeepL alone", help: "DeepL with the GMT glossary, house style and context — no editor", needs: "deepl" },
-  { id: "open", label: "Fine-tuned model alone", help: "Our fine-tuned open model, one pass with termbase hints — no editor", needs: "open" },
+  { id: "open", label: "Fine-tuned model alone", help: "Our fine-tuned open model, one pass with termbase hints — no editor", needs: "open", sources: ["fr"] },
   { id: "claude-legacy", label: "Claude + previous editor", help: "The editor used until November 2026: one free rewrite, then a QA correction pass" },
 ];
+/** Does this system translate from this source language? (the fine-tuned model was trained on French only) */
+export const worksFrom = (id: SystemId, src: Src): boolean => SYSTEMS.find((s) => s.id === id)?.sources?.includes(src) ?? true;
 export const SYSTEM_LABEL = Object.fromEntries(SYSTEMS.map((s) => [s.id, s.label])) as Record<SystemId, string>;
 
 /** Components switched off for one run, to measure what each contributes. */
@@ -67,6 +71,9 @@ export interface Trace {
   system: SystemId;
   variant: string | null;
   lang: Lang;
+  src: Src;
+  /** "fr>en": the direction, the key the scoreboard pools on */
+  pair: string;
   words: number;
   ms: number;
   usd: number;
@@ -192,6 +199,8 @@ const words = (text: string) => (text.trim() ? text.trim().split(/\s+/).length :
 
 export async function runLanguage(opts: {
   lang: Lang;
+  /** language of the text (default: French) */
+  src?: Src;
   text: string;
   terms: TermHit[]; // termbase hits kept after pruning
   dropTerms?: string[]; // keys pruned as ordinary words
@@ -210,7 +219,7 @@ export async function runLanguage(opts: {
   /** evaluation: do not record this run in the shared store */
   silent?: boolean;
 }): Promise<void> {
-  const { lang, text, terms, effort, swiss, signal, patch, system = "claude", variant = {}, dropTerms = [] } = opts;
+  const { lang, text, terms, effort, swiss, signal, patch, system = "claude", variant = {}, dropTerms = [], src = "fr" } = opts;
   const off = variant.off ?? [];
   const qaTerms = off.includes("termbase") ? [] : terms;
   const setStep = (id: StepId, s: StepState) => patch((r) => ({ ...r, steps: { ...r.steps, [id]: s } }));
@@ -237,10 +246,11 @@ export async function runLanguage(opts: {
       const last = i === chunks.length - 1;
       const part = chunks.length > 1 ? ` (part ${i + 1}/${chunks.length})` : "";
       const chunkTerms = qaTerms.filter((h) => h.spans.some(([s, e]) => chunk.includes(text.slice(s, e))));
-      const qa = (t: string) => runQA(chunk, t, lang, chunkTerms, swiss);
+      const qa = (t: string) => runQA(chunk, t, lang, chunkTerms, swiss, src);
       const prior = finals.join("\n\n");
       const base = {
         lang,
+        src,
         source: chunk,
         swiss,
         effort,
@@ -270,7 +280,7 @@ export async function runLanguage(opts: {
             : [tail(paragraphs.slice(0, at).join("\n\n"), 2500), (paragraphs[at + 1] ?? "").slice(0, 800)].filter(Boolean).join("\n\n") || null;
           const title = `${engine === "deepl" ? "DeepL request" : "Open model prompt"} (paragraph ${at + 1}/${paragraphs.length})`;
           const r = await (engine === "deepl" ? runDeepL : runOpen)(
-            { lang, source: para, swiss, context },
+            { lang, src, source: para, swiss, context },
             {
               prompt: (e) => patch((x) => ({ ...x, prompts: [...x.prompts, { title, system: e.system, user: e.user }] })),
               text: system === engine ? (all) => patch((x) => ({ ...x, live: [prior, ...out, all].filter(Boolean).join("\n\n") })) : undefined,
@@ -366,14 +376,14 @@ export async function runLanguage(opts: {
 
       // remember how each term was rendered, for the next parts
       for (const u of termUsage(final, lang, chunkTerms)) {
-        if (u.target && !decisions.some((d) => d.fr === u.hit.fr)) decisions.push({ fr: u.hit.fr, tgt: u.target });
+        if (u.target && !decisions.some((d) => d.src === u.hit.term)) decisions.push({ src: u.hit.term, tgt: u.target });
       }
     }
 
     const draftText = drafts.join("\n\n");
     const finalText = finals.join("\n\n");
-    const qaDraft = runQA(text, draftText, lang, qaTerms, swiss);
-    const qaFinal = runQA(text, finalText, lang, qaTerms, swiss);
+    const qaDraft = runQA(text, draftText, lang, qaTerms, swiss, src);
+    const qaFinal = runQA(text, finalText, lang, qaTerms, swiss, src);
     const applied = chg.filter((c) => !c.rejected);
     const count = <K extends string>(keys: readonly K[], of: (e: Diagnosis) => K) =>
       Object.fromEntries(keys.map((k) => [k, errs.filter((e) => of(e) === k).length])) as Record<K, number>;
@@ -383,6 +393,8 @@ export async function runLanguage(opts: {
       system,
       variant: opts.variantId ?? null,
       lang,
+      src,
+      pair: pairOf(src, lang),
       words: words(text),
       ms: Date.now() - started,
       usd: cost(usage) + (opts.sharedUsd ?? 0),

@@ -1,6 +1,6 @@
 // Browser helpers: the NDJSON step stream, a word diff and the cost estimate.
 
-import type { Lang, StoreKind, StreamEvent, TranslateRequest, Usage } from "./types";
+import type { Lang, Src, StoreKind, StreamEvent, TranslateRequest, Usage } from "./types";
 
 export class AccessError extends Error {}
 
@@ -28,7 +28,7 @@ export function runOpen(req: { lang: Lang; source: string; swiss?: boolean }, on
 
 /** One paragraph through DeepL customised for GMT (/api/deepl). */
 export function runDeepL(
-  req: { lang: Lang; source: string; swiss?: boolean; context?: string | null },
+  req: { lang: Lang; src?: Src; source: string; swiss?: boolean; context?: string | null },
   on: StreamHandlers,
   signal: AbortSignal,
 ): Promise<StepResult> {
@@ -60,10 +60,10 @@ export interface Pruned {
 }
 
 /** Ask Claude which termbase matches are ordinary words in this text (/api/terms). */
-export async function pruneTerms(text: string, signal: AbortSignal): Promise<Pruned> {
+export async function pruneTerms(text: string, signal: AbortSignal, src: Src = "fr"): Promise<Pruned> {
   const none: Pruned = { drop: [], usage: null, system: "", user: "" };
   try {
-    const res = await fetch("/api/terms", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }), signal });
+    const res = await fetch("/api/terms", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text, src }), signal });
     if (res.status === 401) throw new AccessError("access code required");
     return res.ok ? ((await res.json()) as Pruned) : none;
   } catch (err) {

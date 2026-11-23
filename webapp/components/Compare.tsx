@@ -1,7 +1,7 @@
 "use client";
 
 // Blind side-by-side comparison of systems — and of one system with a component switched off —
-// on the same French text. Raters mark error spans (minor / major) and give a 0–100 score
+// on the same source text (French or English). Raters mark error spans (minor / major) and give a 0–100 score
 // (Error Span Annotation, WMT 2024); judgments go to the shared store and feed the scoreboard.
 
 import Link from "next/link";
@@ -10,14 +10,12 @@ import { CANDIDATES, type Candidate, type Judgment, type Span } from "@/lib/cand
 import { cost, pruneTerms, rememberedName, rememberName, saveEvent } from "@/lib/client";
 import { runQA, summarize } from "@/lib/qa";
 import { splitParagraphs } from "@/lib/textnorm";
-import type { Analysis, Effort, Lang, TermHit } from "@/lib/types";
+import { LANG_NAME, LANG_TITLE, SOURCES, TARGETS, pairOf, perLang, type Analysis, type Effort, type Lang, type Src, type TermHit } from "@/lib/types";
 import { marked, paragraphOffsets, type Mark } from "./marks";
-import { emptyRun, runLanguage, type LangRun } from "./run";
+import { emptyRun, runLanguage, worksFrom, type LangRun } from "./run";
 
 const BY_ID = Object.fromEntries(CANDIDATES.map((c) => [c.id, c])) as Record<string, Candidate>;
-const LANG_TITLE: Record<Lang, string> = { en: "English", de: "Deutsch" };
 const LOCAL = "gmt-judgments-unsent";
-const LANGS: Lang[] = ["en", "de"];
 
 interface Sample {
   id: string;
@@ -56,10 +54,11 @@ async function pool(tasks: (() => Promise<void>)[], size: number): Promise<void>
 }
 
 export default function Compare() {
+  const [src, setSrc] = useState<Src>("fr");
   const [text, setText] = useState("");
   const [samples, setSamples] = useState<Sample[]>([]);
   const [sample, setSample] = useState<Sample | null>(null);
-  const [langs, setLangs] = useState<Record<Lang, boolean>>({ en: true, de: true });
+  const [langs, setLangs] = useState<Record<Lang, boolean>>(perLang(() => true));
   const [chosen, setChosen] = useState<Record<string, boolean>>({ claude: true, "deepl-claude": true, deepl: true, gmt: true });
   const [effort, setEffort] = useState<Effort>("high");
   const [swiss, setSwiss] = useState(true);
@@ -67,13 +66,13 @@ export default function Compare() {
   const [rater, setRater] = useState("");
   const [have, setHave] = useState<{ deepl: boolean; open: boolean }>({ deepl: false, open: false });
 
-  const [runSrc, setRunSrc] = useState<{ text: string; sample: Sample | null; langs: Lang[]; terms: TermHit[] } | null>(null);
-  const [order, setOrder] = useState<Record<Lang, string[]>>({ en: [], de: [] });
+  const [runSrc, setRunSrc] = useState<{ text: string; src: Src; sample: Sample | null; langs: Lang[]; terms: TermHit[] } | null>(null);
+  const [order, setOrder] = useState<Record<Lang, string[]>>(perLang(() => []));
   const [runs, setRuns] = useState<Record<string, LangRun>>({});
   const [ratings, setRatings] = useState<Record<string, Rating>>({});
-  const [best, setBest] = useState<Record<Lang, string | null>>({ en: null, de: null });
-  const [revealed, setRevealed] = useState<Record<Lang, boolean>>({ en: false, de: false });
-  const [saved, setSaved] = useState<Record<Lang, "shared" | "local" | null>>({ en: null, de: null });
+  const [best, setBest] = useState<Record<Lang, string | null>>(perLang(() => null));
+  const [revealed, setRevealed] = useState<Record<Lang, boolean>>(perLang(() => false));
+  const [saved, setSaved] = useState<Record<Lang, "shared" | "local" | null>>(perLang(() => null));
   const [running, setRunning] = useState(false);
   const ctl = useRef<AbortController | null>(null);
 
@@ -83,8 +82,12 @@ export default function Compare() {
     setRater(rememberedName());
     try {
       const sent = localStorage.getItem("gmt-compare-text");
-      if (sent?.trim()) setText(sent);
+      if (sent?.trim()) {
+        setText(sent);
+        if (localStorage.getItem("gmt-compare-source") === "en") setSrc("en");
+      }
       localStorage.removeItem("gmt-compare-text");
+      localStorage.removeItem("gmt-compare-source");
     } catch {}
     const json = (r: Response) => (r.ok ? r.json() : null);
     fetch("/api/samples")
@@ -96,35 +99,44 @@ export default function Compare() {
       .catch(() => undefined);
   }, []);
 
+  const LANGS = TARGETS[src];
   const usable = (c: Candidate) =>
-    c.needs === "sample" ? Boolean(sample && text.trim() === sample.fr.trim()) : c.needs === "deepl" ? have.deepl : c.needs === "open" ? have.open : true;
+    (!c.system || worksFrom(c.system, src)) &&
+    (c.needs === "sample" ? Boolean(sample && text.trim() === sample[src].trim()) : c.needs === "deepl" ? have.deepl : c.needs === "open" ? have.open : true);
   const picked = CANDIDATES.filter((c) => chosen[c.id] && usable(c));
 
   function pickSample(s: Sample | null) {
     setSample(s);
-    if (s) setText(s.fr);
+    if (s) setText(s[src]);
+  }
+
+  /** Switch the source language; a loaded sample is shown in that language. */
+  function chooseSource(next: Src) {
+    if (next === src) return;
+    setSrc(next);
+    setText(sample ? sample[next] : "");
   }
 
   async function run() {
-    const src = text.trim();
+    const body = text.trim();
     const ls = LANGS.filter((l) => langs[l]);
-    if (!src || !ls.length || !picked.length) return;
-    const res = await fetch("/api/analyze", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: src }) });
+    if (!body || !ls.length || !picked.length) return;
+    const res = await fetch("/api/analyze", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: body, src }) });
     if (res.status === 401) {
       window.location.assign("/login?next=/compare");
       return;
     }
     const analysis = (await res.json()) as Analysis;
-    const smp = sample && src === sample.fr.trim() ? sample : null;
+    const smp = sample && body === sample[src].trim() ? sample : null;
     ctl.current = new AbortController();
     const signal = ctl.current.signal;
     setRunning(true);
     setRuns({});
     setRatings({});
-    setBest({ en: null, de: null });
-    setRevealed({ en: false, de: false });
-    setSaved({ en: null, de: null });
-    setOrder({ en: shuffle(picked.map((c) => c.id)), de: shuffle(picked.map((c) => c.id)) });
+    setBest(perLang(() => null));
+    setRevealed(perLang(() => false));
+    setSaved(perLang(() => null));
+    setOrder(perLang(() => shuffle(picked.map((c) => c.id))));
 
     // one pruning call serves every Claude-edited candidate
     let gone = new Set<string>();
@@ -132,7 +144,7 @@ export default function Compare() {
     const edited = picked.filter((c) => c.system && c.system !== "deepl" && c.system !== "open");
     if (edited.some((c) => !c.noPrune) && analysis.terms.length) {
       try {
-        const pr = await pruneTerms(src, signal);
+        const pr = await pruneTerms(body, signal, src);
         gone = new Set(pr.drop.map((d) => d.key));
         sharedUsd = pr.usage ? cost([pr.usage]) / (ls.length * edited.length) : 0;
       } catch {
@@ -141,7 +153,7 @@ export default function Compare() {
       }
     }
     const terms = analysis.terms.filter((h) => !gone.has(h.key));
-    setRunSrc({ text: src, sample: smp, langs: ls, terms });
+    setRunSrc({ text: body, src, sample: smp, langs: ls, terms });
 
     const patch = (k: string) => (fn: (r: LangRun) => LangRun) => setRuns((m) => ({ ...m, [k]: fn(m[k] ?? emptyRun()) }));
     const tasks: (() => Promise<void>)[] = [];
@@ -156,7 +168,8 @@ export default function Compare() {
         const job = () =>
           runLanguage({
             lang,
-            text: src,
+            src,
+            text: body,
             terms: c.noPrune ? analysis.terms : terms,
             dropTerms: c.noPrune ? [] : [...gone],
             effort,
@@ -189,6 +202,8 @@ export default function Compare() {
       rater: rater.trim(),
       sample: runSrc.sample?.id ?? null,
       lang,
+      src: runSrc.src,
+      pair: pairOf(runSrc.src, lang),
       blind,
       source: runSrc.text,
       best: best[lang],
@@ -217,7 +232,16 @@ export default function Compare() {
       <h1 className="page-title">Compare systems, blind</h1>
       <section className="panel" style={{ display: "grid", gap: 12 }}>
         <div className="panel-head">
-          <span className="label">French text</span>
+          <div className="row" style={{ gap: 10 }}>
+            <div className="seg" role="group" aria-label="Source language">
+              {SOURCES.map((l) => (
+                <button key={l} type="button" aria-pressed={src === l} onClick={() => chooseSource(l)} disabled={running}>
+                  {LANG_NAME[l]}
+                </button>
+              ))}
+            </div>
+            <span className="label">text</span>
+          </div>
           <div className="row" style={{ gap: 6 }}>
             {samples.length > 0 && (
               <>
@@ -225,7 +249,7 @@ export default function Compare() {
                   <option value="">GMT Magazine sample…</option>
                   {samples.map((s) => (
                     <option key={s.id} value={s.id}>
-                      {s.title} — {s.fr.slice(0, 50)}…
+                      {s.title} — {s[src].slice(0, 50)}…
                     </option>
                   ))}
                 </select>
@@ -238,12 +262,12 @@ export default function Compare() {
         </div>
         <textarea
           className="source"
-          lang="fr"
+          lang={src}
           style={{ minHeight: 130 }}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Paste French copy, or load a GMT Magazine sample: GMT’s own translation then joins the comparison, hidden among the systems."
-          aria-label="French source text"
+          placeholder={`Paste ${LANG_NAME[src]} copy, or load a GMT Magazine sample: GMT’s own text in the other languages then joins the comparison, hidden among the systems.`}
+          aria-label={`${LANG_NAME[src]} source text`}
         />
         {groups.map(([title, list], g) => (
           <div key={title} className="row" style={{ gap: "6px 16px" }}>
@@ -300,6 +324,7 @@ export default function Compare() {
           <LangCompare
             key={lang}
             lang={lang}
+            src={runSrc.src}
             source={runSrc.text}
             terms={runSrc.terms}
             swiss={swiss}
@@ -324,6 +349,7 @@ export default function Compare() {
 
 function LangCompare(props: {
   lang: Lang;
+  src: Src;
   source: string;
   terms: TermHit[];
   swiss: boolean;
@@ -436,7 +462,7 @@ function LangCompare(props: {
         {aligned ? (
           srcParas.map((p, k) => (
             <div key={k} style={{ display: "grid", gap: 8 }}>
-              <div className="muted small src-quote" lang="fr">
+              <div className="muted small src-quote" lang={props.src}>
                 {p}
               </div>
               <div style={grid}>{cands.map((_, i) => card(i, paras[i][k] ?? "", offs[i][k] ?? 0))}</div>
@@ -445,7 +471,7 @@ function LangCompare(props: {
         ) : (
           <>
             {allDone && (
-              <div className="muted small src-quote" lang="fr" style={{ whiteSpace: "pre-wrap" }}>
+              <div className="muted small src-quote" lang={props.src} style={{ whiteSpace: "pre-wrap" }}>
                 {source}
               </div>
             )}
@@ -472,7 +498,7 @@ function LangCompare(props: {
                 const rt = props.rating(id);
                 const ok = r.status === "done";
                 const major = rt.spans.filter((s) => s.severity === "major").length;
-                const qa = ok && id !== "gmt" ? summarize(runQA(source, r.final, lang, props.terms, props.swiss)) : null;
+                const qa = ok && id !== "gmt" ? summarize(runQA(source, r.final, lang, props.terms, props.swiss, props.src)) : null;
                 return (
                   <tr key={id}>
                     <td>{name(i)}</td>

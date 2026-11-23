@@ -4,8 +4,8 @@ Everything measured to date, in one page. Details and full tables are in
 [translation-systems.md](translation-systems.md) and [deepl-system.md](deepl-system.md).
 
 **Scope of these results: French → English (British) and French → German (Swiss) only.**
-English → French and English → German are now required as well. Nothing has been built or
-measured in that direction yet; see [English as a source](#english-as-a-source-not-built-yet).
+English → French and English → German are now built in the desk but not measured; see
+[English as a source](#english-as-a-source-built-not-measured).
 
 ## How we measure
 
@@ -99,7 +99,7 @@ The draft itself costs $0.22 (English) and $0.33 (German) per 1,000 words.
 
 ## Not tested yet
 
-- **English → French and English → German** (see below).
+- **English → French and English → German**: built, no quality measurement yet (see below).
 - **Blind ratings by GMT editors.** The Compare and Scoreboard pages are live; no ratings have
   been analysed. This is the judge for style and fluency, where metrics are weak.
 - **DeepL draft + Claude editor**, and Claude + DeepL drafts merged by one editor. Both run in
@@ -109,21 +109,30 @@ The draft itself costs $0.22 (English) and $0.33 (German) per 1,000 words.
   Hugging Face credit.
 - **xCOMET**: the model's licence has not been accepted and it needs a GPU.
 
-## English as a source (not built yet)
+## English as a source (built, not measured)
 
-The desk, the termbase lookup, the example index, the checks and the DeepL setup all assume a
-French source. What the data allows:
+The desk now translates from English into French and German: a source switch on the Translator
+and Compare pages. French-source prompts, terms and examples are unchanged (checked identical
+before and after).
 
-| Direction | Aligned sentence pairs available | Of which GMT's own |
-|---|---|---|
-| English → French | 522,000 | 401,000 WorldTempus + 2,700 GMT Magazine |
-| English → German | 103,000 (71,000 are patent claims, unused) | 2,200 GMT Magazine |
+| Part | How it works from English |
+|---|---|
+| Termbase | Read from its English side: 3,818 English keys. Each English → French and English → German pair is checked against published sentence pairs; 241 keys whose pair GMT never uses were dropped ("going train" → "mobiles compteurs") |
+| Examples | English → French: GMT's 120,000 French–English pairs read the other way. English → German: 19,800 pairs (1,300 GMT Magazine, 18,400 brand, dictionary and Rolex) |
+| Style guide | French: written from counts on GMT's own French (404,546 sentences): « … » with spaces, space before : ; ! ?, 28'800, CHF before the amount, "or blanc", "édition limitée". German: the existing guide with English cues |
+| Checks | French typography and English left untranslated are flagged; figures, references, terms and paragraphs as before |
+| DeepL | Surrounding paragraphs as context; French also gets up to five term instructions. No GMT glossary or style list in this direction |
+| Fine-tuned model | Not offered: it was trained on French sources only |
 
-- English → French has as much data as French → English. English → German has little GMT
-  data: 2,200 magazine pairs, plus 30,000 brand, dictionary and Rolex pairs.
+Tested so far: term lookup, examples, prompts, the page, and DeepL alone into both languages,
+on a local copy. **Not tested: the Claude steps from English** (no Claude key on the
+development machine; they run only once deployed). **Not measured: quality in either English
+direction.**
+
+Caveats for measuring:
+
 - Most GMT texts were written in French. Used in reverse, the "English source" is itself a
   translation, which makes a test set easier than real English copy. A fair test needs
   articles GMT originally wrote in English.
-- To build: term lookup on English keys, an example index on the English side, a French style
-  guide measured on GMT's French, checks and typography for French output, DeepL glossaries
-  for both new pairs, a direction switch in the desk, and a held-out test set per direction.
+- English → German has little GMT data: 2,200 magazine pairs.
+- The batch command line still translates from French only.

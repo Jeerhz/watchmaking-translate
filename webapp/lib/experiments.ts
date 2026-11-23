@@ -120,7 +120,7 @@ export const EXPERIMENTS: Experiment[] = [
 ];
 
 export const NOT_TESTED: string[] = [
-  "English → French and English → German: nothing built or measured yet. The data allows it (522,000 aligned English–French pairs, 103,000 English–German of which 2,200 are GMT’s own).",
+  "English → French and English → German: built in the desk (source switch on the Translator and Compare pages), not measured yet. English → German has little GMT data (2,200 sentence pairs).",
   "Blind ratings by GMT editors: the Compare and Scoreboard pages are live; no ratings have been analysed.",
   "Fine-tuned Gemma 4 12B and the second training round on GMT Magazine German.",
 ];

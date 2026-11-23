@@ -274,7 +274,7 @@ export default function Roadmap() {
             <tr>
               <td>English as the source?</td>
               <td>
-                Required (English → French, English → German) and not built yet: the desk assumes a French source. The data allows it; see{" "}
+                Built: the Translator and Compare pages have a source switch (English → French, English → German). Not measured yet; see{" "}
                 <a href="/architecture#results">Results so far</a>.
               </td>
             </tr>

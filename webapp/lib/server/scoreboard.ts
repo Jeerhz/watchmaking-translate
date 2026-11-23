@@ -3,18 +3,24 @@
 // and how much editors still change before validating.
 
 import { CANDIDATE_LABEL, COMPONENTS, type Judgment } from "../candidates";
-import { CATEGORIES, type Category, type Lang, type StoreEvent } from "../types";
+import { CATEGORIES, type Category, type StoreEvent } from "../types";
 import { listEvents, STORE } from "./store";
 
 type J = StoreEvent & Judgment;
 const wordsOf = (t: string) => (t.trim() ? t.trim().split(/\s+/).length : 0);
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+/** The direction an event belongs to ("fr>en"). Events saved before English sources existed have no pair: they are French. */
+const pairKey = (e: object): string => {
+  const { pair, lang } = e as { pair?: unknown; lang?: unknown };
+  return typeof pair === "string" ? pair : `fr>${String(lang)}`;
+};
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 
 export interface SystemRow {
   id: string;
   label: string;
-  lang: Lang;
+  /** the direction, as "fr>en" */
+  lang: string;
   judged: number;
   score: number | null;
   best: number;
@@ -38,7 +44,8 @@ export interface ComponentRow {
 export interface StageRow {
   system: string;
   label: string;
-  lang: Lang;
+  /** the direction, as "fr>en" */
+  lang: string;
   runs: number;
   words: number;
   editorShare: number | null;
@@ -57,7 +64,8 @@ export interface StageRow {
 export interface ValidationRow {
   system: string;
   label: string;
-  lang: Lang;
+  /** the direction, as "fr>en" */
+  lang: string;
   n: number;
   words: number;
   humanShare: number | null;
@@ -78,11 +86,11 @@ export async function scoreboard(): Promise<Scoreboard> {
   const label = (id: string) => CANDIDATE_LABEL[id] ?? id;
 
   // ---- systems, as rated blind
-  const sys = new Map<string, { id: string; lang: Lang; scores: number[]; best: number; seen: number; minor: number; major: number; words: number }>();
+  const sys = new Map<string, { id: string; lang: string; scores: number[]; best: number; seen: number; minor: number; major: number; words: number }>();
   for (const j of judgments) {
     for (const c of j.candidates ?? []) {
-      const k = `${c.system}|${j.lang}`;
-      const a = sys.get(k) ?? { id: c.system, lang: j.lang, scores: [], best: 0, seen: 0, minor: 0, major: 0, words: 0 };
+      const k = `${c.system}|${pairKey(j)}`;
+      const a = sys.get(k) ?? { id: c.system, lang: pairKey(j), scores: [], best: 0, seen: 0, minor: 0, major: 0, words: 0 };
       a.seen += 1;
       if (j.best === c.system) a.best += 1;
       if (typeof c.score === "number") {
@@ -135,12 +143,12 @@ export async function scoreboard(): Promise<Scoreboard> {
   const st = new Map<string, StoreEvent[]>();
   for (const r of runs) {
     const id = (r.variant as string | null) ?? (r.system as string);
-    const k = `${id}|${r.lang as string}`;
+    const k = `${id}|${pairKey(r)}`;
     st.set(k, [...(st.get(k) ?? []), r]);
   }
   const stages: StageRow[] = [...st.entries()]
     .map(([k, rs]) => {
-      const [id, lang] = k.split("|") as [string, Lang];
+      const [id, lang] = k.split("|") as [string, string];
       const words = rs.reduce((s, r) => s + num(r.words), 0);
       const per1k = (f: (r: StoreEvent) => number) => (words ? (rs.reduce((s, r) => s + f(r), 0) / words) * 1000 : null);
       const qa = (r: StoreEvent, key: "qaDraft" | "qaFinal") => {
@@ -177,12 +185,12 @@ export async function scoreboard(): Promise<Scoreboard> {
   // ---- validations: how much the editor still changed
   const va = new Map<string, StoreEvent[]>();
   for (const v of validations) {
-    const k = `${v.system as string}|${v.lang as string}`;
+    const k = `${v.system as string}|${pairKey(v)}`;
     va.set(k, [...(va.get(k) ?? []), v]);
   }
   const vrows: ValidationRow[] = [...va.entries()]
     .map(([k, vs]) => {
-      const [id, lang] = k.split("|") as [string, Lang];
+      const [id, lang] = k.split("|") as [string, string];
       return {
         system: id,
         label: label(id),

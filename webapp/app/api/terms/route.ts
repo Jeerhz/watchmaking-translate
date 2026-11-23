@@ -6,7 +6,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { findTerms } from "@/lib/server/engine";
 import { PRUNE_SCHEMA, PRUNE_SYSTEM, pruneUser } from "@/lib/server/prompts";
-import type { Usage } from "@/lib/types";
+import { isSrc, type Src, type Usage } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -22,13 +22,16 @@ export interface PruneResult {
 }
 
 export async function POST(req: Request): Promise<Response> {
-  const { text } = (await req.json()) as { text?: string };
+  const body = (await req.json()) as { text?: string; src?: string };
+  const lang: Src = isSrc(body.src) ? body.src : "fr";
+  const { text } = body;
   if (typeof text !== "string" || !text.trim()) return Response.json({ error: "text required" }, { status: 400 });
   const src = text.slice(0, 40_000);
-  const hits = findTerms(src, null);
-  const empty: PruneResult = { drop: [], usage: null, system: PRUNE_SYSTEM, user: "" };
+  const hits = findTerms(src, null, 150, lang);
+  const system = PRUNE_SYSTEM[lang];
+  const empty: PruneResult = { drop: [], usage: null, system, user: "" };
   if (!hits.length) return Response.json(empty);
-  const user = pruneUser(src, hits);
+  const user = pruneUser(src, hits, lang);
   const started = Date.now();
   try {
     const message = await client.messages.create(
@@ -36,7 +39,7 @@ export async function POST(req: Request): Promise<Response> {
         model: MODEL,
         max_tokens: 8000,
         thinking: { type: "adaptive" },
-        system: PRUNE_SYSTEM,
+        system,
         messages: [{ role: "user", content: user }],
         output_config: { effort: "low", format: { type: "json_schema", schema: PRUNE_SCHEMA } },
       },
@@ -51,7 +54,7 @@ export async function POST(req: Request): Promise<Response> {
     const u = message.usage;
     const result: PruneResult = {
       drop,
-      system: PRUNE_SYSTEM,
+      system,
       user,
       usage: {
         input: u.input_tokens,
