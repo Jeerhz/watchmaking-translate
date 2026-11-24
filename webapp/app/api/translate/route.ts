@@ -24,7 +24,8 @@ export const maxDuration = 300;
 const MODEL = "claude-opus-5-5";
 const MAX_WORDS = 1600;
 const STEPS: Step[] = ["draft", "diagnose", "repair", "review", "fix"];
-const client = new Anthropic();
+// the key is ANTHROPIC_API_KEY (Vercel) or CLAUDE_API_KEY (the name used in the local .env)
+const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? process.env.CLAUDE_API_KEY });
 
 export async function POST(req: Request): Promise<Response> {
   const body = (await req.json()) as TranslateRequest;

@@ -36,6 +36,8 @@ export function softInstructions(source: string, lang: Lang, swiss: boolean, lim
     // (French source) or carry a GMT house rule (English source)
     if (!fr.includes(" ") && !(src === "fr" ? WATCH.has(fr) : h[lang][0][2] <= 0)) continue;
     let tgt = caseFor(h[lang][0][0], lang);
+    // dictionary headwords are capitalised ("Phases de lune"); GMT house terms keep their own case
+    if (lang === "fr" && h[lang][0][2] > 0 && /^\p{Lu}\p{Ll}/u.test(tgt)) tgt = tgt[0].toLowerCase() + tgt.slice(1);
     if (lang === "de" && swiss) tgt = tgt.replace(/ß/g, "ss");
     out.push(`Translate '${h.surface}' as '${tgt}'.`);
     if (out.length === limit) break;

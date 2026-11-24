@@ -124,10 +124,17 @@ before and after).
 | DeepL | Surrounding paragraphs as context; French also gets up to five term instructions. No GMT glossary or style list in this direction |
 | Fine-tuned model | Not offered: it was trained on French sources only |
 
-Tested so far: term lookup, examples, prompts, the page, and DeepL alone into both languages,
-on a local copy. **Not tested: the Claude steps from English** (no Claude key on the
-development machine; they run only once deployed). **Not measured: quality in either English
-direction.**
+Tested on one 150-word text (23 and 25 November 2026), into French and German:
+
+| System | What happened |
+|---|---|
+| Claude + editor (production) | Complete drafts with approved terms and house formats. Term pruning removed 6 of 25 matches, all everyday words ("top", "season", "bridge the gap"). The editor found nothing to correct |
+| DeepL + Claude editor (local copy) | The editor found 3 errors in each language and repaired all 6. French: a capital, the thousands separator, a straight apostrophe. German: "Bandanstösse" → "Hörner", "Côtes de Genève" → "Genfer Streifen", the thousands separator |
+| Claude + DeepL, one editor (local copy, French) | Runs; the editor found nothing to correct |
+| DeepL alone (local copy) | Runs with context and term instructions |
+
+**Not measured: quality in either English direction.** One text shows that every step runs, not
+how good the output is.
 
 Caveats for measuring:
 
