@@ -8,7 +8,7 @@
 import { useMemo } from "react";
 import { enforced, termUsage, type TermUse } from "@/lib/qa";
 import { splitParagraphs } from "@/lib/textnorm";
-import { LANG_TITLE as TITLE, TARGETS, type Lang, type Src, type TermHit } from "@/lib/types";
+import { TARGETS, langLabel, type Lang, type Src, type TermHit } from "@/lib/types";
 import { marked, paragraphOffsets, type Mark } from "./marks";
 import type { LangRun } from "./run";
 
@@ -16,6 +16,7 @@ import type { LangRun } from "./run";
 export default function AlignedGrid(props: {
   source: string;
   src: Src;
+  swiss?: boolean;
   terms: TermHit[];
   runs: Record<Lang, LangRun>;
   editing: Record<Lang, boolean>;
@@ -23,6 +24,7 @@ export default function AlignedGrid(props: {
 }) {
   const { source, terms, runs, editing, src } = props;
   const LANGS = TARGETS[src];
+  const title = (l: Lang) => langLabel(l, props.swiss ?? true);
   const srcParas = useMemo(() => splitParagraphs(source), [source]);
   const srcOffs = useMemo(() => paragraphOffsets(source, srcParas), [source, srcParas]);
 
@@ -44,7 +46,7 @@ export default function AlignedGrid(props: {
       s,
       e,
       cls: miss.length ? "term miss" : "term",
-      title: miss.length ? `${eq} — approved equivalent not found in ${miss.map((l) => TITLE[l]).join(" and ")}` : eq,
+      title: miss.length ? `${eq} — approved equivalent not found in ${miss.map((l) => title(l)).join(" and ")}` : eq,
     }));
   });
   const tgtMarks = (usage: TermUse[], lang: Lang): Mark[] =>
@@ -71,11 +73,11 @@ export default function AlignedGrid(props: {
     <div className="aligned" role="table" aria-label="Source and translations, paragraph by paragraph">
       <div className="aligned-row head" role="row">
         <div className="label" role="columnheader">
-          {TITLE[src]}
+          {title(src)}
         </div>
         {cols.map((c) => (
           <div key={c.lang} className="label" role="columnheader">
-            {TITLE[c.lang]}
+            {title(c.lang)}
             {c.run.status === "running" && <span className="muted"> — {c.run.liveLabel}…</span>}
             {c.run.approved && <span className="badge ok" style={{ marginLeft: 8 }}>validated</span>}
           </div>
@@ -97,7 +99,7 @@ export default function AlignedGrid(props: {
                     value={body}
                     rows={Math.max(2, Math.ceil(body.length / 52))}
                     onChange={(e) => (aligned ? setPara(c, k, e.target.value) : props.onEdit(c.lang, e.target.value))}
-                    aria-label={`${TITLE[c.lang]}, paragraph ${k + 1}`}
+                    aria-label={`${title(c.lang)}, paragraph ${k + 1}`}
                   />
                 ) : body ? (
                   marked(body, tgtMarks(c.usage, c.lang), from)

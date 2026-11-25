@@ -6,7 +6,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { cost, diffWords, editRate, rememberedName, rememberName, saveEvent } from "@/lib/client";
 import { runQA, summarize, type QACheck } from "@/lib/qa";
-import { LANG_NAME, LANG_TITLE, pairOf, type Change, type Lang, type Src, type TermHit } from "@/lib/types";
+import { LANG_NAME, langLabel, pairOf, type Change, type Lang, type Src, type TermHit } from "@/lib/types";
 import StageTrace from "./StageTrace";
 import { STEP_LABEL, SYSTEM_LABEL, type LangRun, type StepId } from "./run";
 
@@ -124,7 +124,7 @@ export default function LangColumn(props: {
   return (
     <section className="panel" aria-label={LANG_NAME[lang] + " translation"}>
       <div className="panel-head">
-        <h2 style={{ margin: 0, fontSize: "1.25rem" }}>{LANG_TITLE[lang]}</h2>
+        <h2 style={{ margin: 0, fontSize: "1.25rem" }}>{langLabel(lang, swiss)}</h2>
         <span className="muted small">
           {run.status === "running" ? run.liveLabel + "…" : done && run.trace ? `${SYSTEM_LABEL[run.system]} · ${Math.round(run.trace.ms / 1000)} s` : ""}
         </span>

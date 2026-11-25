@@ -1,5 +1,5 @@
-import Desk from "@/components/Desk";
+import Compare from "@/components/Compare";
 
 export default function Home() {
-  return <Desk />;
+  return <Compare />;
 }

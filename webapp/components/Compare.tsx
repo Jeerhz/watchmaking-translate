@@ -4,13 +4,12 @@
 // on the same source text (French or English). Raters mark error spans (minor / major) and give a 0–100 score
 // (Error Span Annotation, WMT 2024); judgments go to the shared store and feed the scoreboard.
 
-import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { CANDIDATES, type Candidate, type Judgment, type Span } from "@/lib/candidates";
 import { cost, pruneTerms, rememberedName, rememberName, saveEvent } from "@/lib/client";
 import { runQA, summarize } from "@/lib/qa";
 import { splitParagraphs } from "@/lib/textnorm";
-import { LANG_NAME, LANG_TITLE, SOURCES, TARGETS, pairOf, perLang, type Analysis, type Effort, type Lang, type Src, type TermHit } from "@/lib/types";
+import { LANG_NAME, SOURCES, TARGETS, langLabel, pairOf, perLang, type Analysis, type Effort, type Lang, type Src, type TermHit } from "@/lib/types";
 import { marked, paragraphOffsets, type Mark } from "./marks";
 import { emptyRun, runLanguage, worksFrom, type LangRun } from "./run";
 
@@ -74,6 +73,8 @@ export default function Compare() {
   const [revealed, setRevealed] = useState<Record<Lang, boolean>>(perLang(() => false));
   const [saved, setSaved] = useState<Record<Lang, "shared" | "local" | null>>(perLang(() => null));
   const [running, setRunning] = useState(false);
+  const [phase, setPhase] = useState<"read" | "terms" | "translate" | null>(null);
+  const [showParams, setShowParams] = useState(false);
   const ctl = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -121,9 +122,17 @@ export default function Compare() {
     const body = text.trim();
     const ls = LANGS.filter((l) => langs[l]);
     if (!body || !ls.length || !picked.length) return;
+    setRunning(true);
+    setPhase("read");
+    setRunSrc(null);
     const res = await fetch("/api/analyze", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: body, src }) });
     if (res.status === 401) {
-      window.location.assign("/login?next=/compare");
+      window.location.assign("/login?next=/");
+      return;
+    }
+    if (!res.ok) {
+      setRunning(false);
+      setPhase(null);
       return;
     }
     const analysis = (await res.json()) as Analysis;
@@ -143,15 +152,18 @@ export default function Compare() {
     let sharedUsd = 0;
     const edited = picked.filter((c) => c.system && c.system !== "deepl" && c.system !== "open");
     if (edited.some((c) => !c.noPrune) && analysis.terms.length) {
+      setPhase("terms");
       try {
         const pr = await pruneTerms(body, signal, src);
         gone = new Set(pr.drop.map((d) => d.key));
         sharedUsd = pr.usage ? cost([pr.usage]) / (ls.length * edited.length) : 0;
       } catch {
         setRunning(false);
+        setPhase(null);
         return;
       }
     }
+    setPhase("translate");
     const terms = analysis.terms.filter((h) => !gone.has(h.key));
     setRunSrc({ text: body, src, sample: smp, langs: ls, terms });
 
@@ -193,6 +205,7 @@ export default function Compare() {
     ]);
     ctl.current = null;
     setRunning(false);
+    setPhase(null);
   }
 
   async function save(lang: Lang) {
@@ -223,16 +236,31 @@ export default function Compare() {
   }
 
   const groups: [string, Candidate[]][] = [
-    ["Systems", CANDIDATES.filter((c) => c.group !== "component")],
+    ["Translations to compare", CANDIDATES.filter((c) => c.group !== "component")],
     ["One component switched off", CANDIDATES.filter((c) => c.group === "component")],
   ];
 
+  // progress, in words: what is happening now and how much is done
+  const jobs = runSrc ? runSrc.langs.flatMap((l) => order[l].map((id) => runs[`${l}:${id}`])) : [];
+  const total = runSrc ? runSrc.langs.reduce((n, l) => n + order[l].length, 0) : 0;
+  const finished = jobs.filter((r) => r && r.status !== "running" && r.status !== "idle").length;
+  const into = TARGETS[src].filter((l) => langs[l]).map((l) => langLabel(l, swiss)).join(" and ");
+  const progress =
+    phase === "read"
+      ? "Reading the text: looking up GMT’s terms and published sentences…"
+      : phase === "terms"
+        ? "Checking which terms apply to this text…"
+        : phase === "translate"
+          ? `Translating into ${into}: ${finished} of ${total} translations ready…`
+          : "";
+
   return (
     <main className="page" style={{ display: "grid", gap: 20 }}>
-      <h1 className="page-title">Compare systems, blind</h1>
-      <section className="panel" style={{ display: "grid", gap: 12 }}>
+      <h1 className="page-title">Compare translations</h1>
+      <section className="panel workbench" style={{ display: "grid", gap: 12 }}>
         <div className="panel-head">
           <div className="row" style={{ gap: 10 }}>
+            <span className="label">Translate from</span>
             <div className="seg" role="group" aria-label="Source language">
               {SOURCES.map((l) => (
                 <button key={l} type="button" aria-pressed={src === l} onClick={() => chooseSource(l)} disabled={running}>
@@ -240,25 +268,13 @@ export default function Compare() {
                 </button>
               ))}
             </div>
-            <span className="label">text</span>
+            <span className="muted small">into {into}</span>
           </div>
-          <div className="row" style={{ gap: 6 }}>
-            {samples.length > 0 && (
-              <>
-                <select value={sample?.id ?? ""} onChange={(e) => pickSample(samples.find((s) => s.id === e.target.value) ?? null)} disabled={running} aria-label="GMT Magazine sample">
-                  <option value="">GMT Magazine sample…</option>
-                  {samples.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.title} — {s[src].slice(0, 50)}…
-                    </option>
-                  ))}
-                </select>
-                <button className="btn ghost small" type="button" disabled={running} onClick={() => pickSample(samples[Math.floor(Math.random() * samples.length)])}>
-                  Random sample
-                </button>
-              </>
-            )}
-          </div>
+          {samples.length > 0 && (
+            <button className="btn ghost small" type="button" disabled={running} onClick={() => pickSample(samples[Math.floor(Math.random() * samples.length)])} title="Load a passage from GMT Magazine: GMT’s own text then joins the comparison">
+              Load a GMT Magazine passage
+            </button>
+          )}
         </div>
         <textarea
           className="source"
@@ -266,46 +282,12 @@ export default function Compare() {
           style={{ minHeight: 130 }}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder={`Paste ${LANG_NAME[src]} copy, or load a GMT Magazine sample: GMT’s own text in the other languages then joins the comparison, hidden among the systems.`}
+          placeholder={`Paste ${LANG_NAME[src]} text here, or load a GMT Magazine passage.`}
           aria-label={`${LANG_NAME[src]} source text`}
         />
-        {groups.map(([title, list], g) => (
-          <div key={title} className="row" style={{ gap: "6px 16px" }}>
-            <span className="label" style={{ minWidth: 190 }}>
-              {title}
-            </span>
-            {list.map((c) => (
-              <label key={c.id} className="check" title={c.help} style={{ opacity: usable(c) ? 1 : 0.45 }}>
-                <input type="checkbox" checked={Boolean(chosen[c.id]) && usable(c)} disabled={running || !usable(c)} onChange={(e) => setChosen((x) => ({ ...x, [c.id]: e.target.checked }))} />{" "}
-                {g === 1 ? c.label.replace(/^Claude \+ editor, /, "").replace(/^Claude, /, "").replace(/^Claude \+ previous/, "previous") : c.label}
-              </label>
-            ))}
-          </div>
-        ))}
-        <div className="row" style={{ gap: "6px 16px" }}>
-          {LANGS.map((l) => (
-            <label key={l} className="check">
-              <input type="checkbox" checked={langs[l]} disabled={running} onChange={(e) => setLangs((x) => ({ ...x, [l]: e.target.checked }))} /> {LANG_TITLE[l]}
-            </label>
-          ))}
-          <label className="check">
-            <input type="checkbox" checked={swiss} disabled={running} onChange={(e) => setSwiss(e.target.checked)} /> Swiss German
-          </label>
-          <div className="seg" role="group" aria-label="Quality">
-            <button type="button" aria-pressed={effort === "high"} disabled={running} onClick={() => setEffort("high")}>
-              Quick draft
-            </button>
-            <button type="button" aria-pressed={effort === "xhigh"} disabled={running} onClick={() => setEffort("xhigh")}>
-              Publication
-            </button>
-          </div>
-          <label className="check" title="Shuffle the candidates and hide which system wrote what until you save">
-            <input type="checkbox" checked={blind} disabled={running} onChange={(e) => setBlind(e.target.checked)} /> Blind
-          </label>
-        </div>
         <div className="row">
-          <button className="btn" onClick={run} disabled={running || !text.trim() || !picked.length}>
-            Run {picked.length} candidate{picked.length === 1 ? "" : "s"}
+          <button className="btn" onClick={run} disabled={running || !text.trim() || !picked.length || !into}>
+            {running ? "Translating…" : "Translate and compare"}
           </button>
           {running && (
             <button className="btn ghost" onClick={() => ctl.current?.abort()}>
@@ -313,10 +295,82 @@ export default function Compare() {
             </button>
           )}
           <span style={{ flex: 1 }} />
-          <Link href="/scoreboard" className="small">
-            Scoreboard: everyone’s ratings →
-          </Link>
+          <button className="btn ghost small quiet disclosure" type="button" aria-expanded={showParams} aria-controls="params" onClick={() => setShowParams((v) => !v)}>
+            <span aria-hidden className="arrow">
+              ▸
+            </span>{" "}
+            Parameters
+          </button>
         </div>
+        {running && (
+          <div className="progress" role="status" aria-live="polite">
+            <div className="progress-bar" aria-hidden>
+              <span style={phase === "translate" && total ? { width: `${Math.max(6, (finished / total) * 100)}%`, animation: "none" } : undefined} />
+            </div>
+            <span>{progress}</span>
+          </div>
+        )}
+        {showParams && (
+          <div id="params" className="params">
+            {samples.length > 0 && (
+              <div className="row" style={{ gap: "6px 16px" }}>
+                <span className="label" style={{ minWidth: 190 }}>
+                  GMT Magazine passage
+                </span>
+                <select value={sample?.id ?? ""} onChange={(e) => pickSample(samples.find((s) => s.id === e.target.value) ?? null)} disabled={running} aria-label="GMT Magazine passage">
+                  <option value="">Choose a passage…</option>
+                  {samples.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.title} — {s[src].slice(0, 50)}…
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {groups.map(([title, list], g) => (
+              <div key={title} className="row" style={{ gap: "6px 16px" }}>
+                <span className="label" style={{ minWidth: 190 }}>
+                  {title}
+                </span>
+                {list.map((c) => (
+                  <label key={c.id} className="check" title={c.help} style={{ opacity: usable(c) ? 1 : 0.45 }}>
+                    <input type="checkbox" checked={Boolean(chosen[c.id]) && usable(c)} disabled={running || !usable(c)} onChange={(e) => setChosen((x) => ({ ...x, [c.id]: e.target.checked }))} />{" "}
+                    {g === 1 ? c.label.replace(/^Claude \+ editor, /, "").replace(/^Claude, /, "").replace(/^Claude \+ previous/, "previous") : c.label}
+                  </label>
+                ))}
+              </div>
+            ))}
+            <div className="row" style={{ gap: "6px 16px" }}>
+              <span className="label" style={{ minWidth: 190 }}>
+                Languages
+              </span>
+              {LANGS.map((l) => (
+                <label key={l} className="check">
+                  <input type="checkbox" checked={langs[l]} disabled={running} onChange={(e) => setLangs((x) => ({ ...x, [l]: e.target.checked }))} /> {LANG_NAME[l]}
+                </label>
+              ))}
+              <label className="check">
+                <input type="checkbox" checked={swiss} disabled={running} onChange={(e) => setSwiss(e.target.checked)} /> Swiss spelling for German (ss, «»)
+              </label>
+            </div>
+            <div className="row" style={{ gap: "6px 16px" }}>
+              <span className="label" style={{ minWidth: 190 }}>
+                Run
+              </span>
+              <div className="seg" role="group" aria-label="Quality">
+                <button type="button" aria-pressed={effort === "high"} disabled={running} onClick={() => setEffort("high")}>
+                  Quick draft
+                </button>
+                <button type="button" aria-pressed={effort === "xhigh"} disabled={running} onClick={() => setEffort("xhigh")}>
+                  Publication
+                </button>
+              </div>
+              <label className="check" title="Shuffle the candidates and hide which system wrote what until you save">
+                <input type="checkbox" checked={blind} disabled={running} onChange={(e) => setBlind(e.target.checked)} /> Hide which system wrote what
+              </label>
+            </div>
+          </div>
+        )}
       </section>
 
       {runSrc &&
@@ -405,7 +459,6 @@ function LangCompare(props: {
     window.getSelection()?.removeAllRanges();
   }
 
-  const grid = { display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" } as const;
   const card = (i: number, body: string, from: number) => {
     const { id, r } = cands[i];
     const marks: Mark[] = props.rating(id).spans.map((s) => ({
@@ -419,13 +472,23 @@ function LangCompare(props: {
       <div key={id} className="cand" lang={lang}>
         <div className="label" style={{ marginBottom: 6 }}>
           {name(i)}
-          {r.status === "running" && <span className="muted"> — {r.liveLabel || "translating"}…</span>}
+          {(r.status === "running" || (r.status === "idle" && props.running)) && <span className="muted working"> — {r.status === "idle" ? "waiting its turn" : blind ? "translating" : r.liveLabel || "translating"}…</span>}
         </div>
         {r.error ? (
           <div className="notice err">{r.error}</div>
         ) : (
           <div className="cand-text" data-cand={r.status === "done" ? id : undefined} data-off={from}>
-            {body ? marked(body, marks, from) : <span className="muted">…</span>}
+            {body ? (
+              marked(body, marks, from)
+            ) : r.status === "done" ? (
+              <span className="muted">(empty)</span>
+            ) : (
+              <span className="skeleton" aria-hidden>
+                <i />
+                <i />
+                <i />
+              </span>
+            )}
           </div>
         )}
         {pending?.id === id && pending.start >= from && pending.start < from + Math.max(body.length, 1) && (
@@ -444,9 +507,9 @@ function LangCompare(props: {
   };
 
   return (
-    <section className="panel" style={{ display: "grid", gap: 14 }} aria-label={`${LANG_TITLE[lang]} comparison`}>
+    <section className="panel section" style={{ display: "grid", gap: 14 }} aria-label={`${langLabel(lang, props.swiss)} comparison`}>
       <div className="panel-head">
-        <h2 style={{ margin: 0, fontSize: "1.25rem" }}>{LANG_TITLE[lang]}</h2>
+        <h2 style={{ margin: 0, fontSize: "1.25rem" }}>{langLabel(lang, props.swiss)}</h2>
         <button className="btn ghost small" onClick={props.onReveal} disabled={!allDone}>
           {blind ? "Reveal the systems" : "Hide the names"}
         </button>
@@ -465,7 +528,7 @@ function LangCompare(props: {
               <div className="muted small src-quote" lang={props.src}>
                 {p}
               </div>
-              <div style={grid}>{cands.map((_, i) => card(i, paras[i][k] ?? "", offs[i][k] ?? 0))}</div>
+              <div className="cands">{cands.map((_, i) => card(i, paras[i][k] ?? "", offs[i][k] ?? 0))}</div>
             </div>
           ))
         ) : (
@@ -475,7 +538,7 @@ function LangCompare(props: {
                 {source}
               </div>
             )}
-            <div style={grid}>{cands.map(({ r }, i) => card(i, textOf(r), 0))}</div>
+            <div className="cands">{cands.map(({ r }, i) => card(i, textOf(r), 0))}</div>
           </>
         )}
       </div>

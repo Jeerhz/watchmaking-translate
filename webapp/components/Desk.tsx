@@ -1,12 +1,12 @@
 "use client";
 
 // The Translator: one system per run, read and edited paragraph by paragraph.
-// Comparing systems lives on /compare; what each component contributes, on /scoreboard.
+// Comparing systems lives on the home page; what each component contributes, on /scoreboard.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { cost, pruneTerms } from "@/lib/client";
-import { LANG_NAME, SOURCES, TARGETS, perLang, type Analysis, type Effort, type Lang, type Src } from "@/lib/types";
+import { LANG_NAME, SOURCES, TARGETS, langLabel, perLang, type Analysis, type Effort, type Lang, type Src } from "@/lib/types";
 import AlignedGrid from "./AlignedGrid";
 import AnalysisPanel, { type Dropped } from "./AnalysisPanel";
 import LangColumn from "./LangColumn";
@@ -84,7 +84,7 @@ export default function Desk() {
   const analyse = useCallback(async (t: string, from: Src): Promise<Analysis | null> => {
     const res = await fetch("/api/analyze", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: t, src: from }) });
     if (res.status === 401) {
-      window.location.assign("/login?next=/");
+      window.location.assign("/login?next=/translator");
       return null;
     }
     return res.ok ? ((await res.json()) as Analysis) : null;
@@ -206,7 +206,7 @@ export default function Desk() {
       localStorage.setItem("gmt-compare-text", text);
       localStorage.setItem("gmt-compare-source", src);
     } catch {}
-    router.push("/compare");
+    router.push("/");
   }
 
   const anyDone = langs.some((l) => runs[l].status === "done");
@@ -220,7 +220,7 @@ export default function Desk() {
   return (
     <main className="page">
       <h1 className="page-title">
-        {LANG_NAME[src]} → {LANG_NAME[first]} &amp; {LANG_NAME[second]}
+        {LANG_NAME[src]} → {langLabel(first, swiss)} &amp; {langLabel(second, swiss)}
       </h1>
 
       <div className="desk-top">
@@ -305,7 +305,7 @@ export default function Desk() {
       {started && ran && (
         <>
           <section className="panel" aria-label="Translation">
-            <AlignedGrid source={ran.text} src={ran.src} terms={keptTerms} runs={runs} editing={editing} onEdit={(lang, t) => patchFor(lang)((r) => ({ ...r, edited: t }))} />
+            <AlignedGrid source={ran.text} src={ran.src} swiss={swiss} terms={keptTerms} runs={runs} editing={editing} onEdit={(lang, t) => patchFor(lang)((r) => ({ ...r, edited: t }))} />
           </section>
           <div className="outputs">
             {langs.map((lang) => (

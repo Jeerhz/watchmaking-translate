@@ -1,7 +1,6 @@
-import Compare from "@/components/Compare";
+import { redirect } from "next/navigation";
 
-export const metadata = { title: "Compare systems — GMT Translation Desk" };
-
+// The comparison is the home page; old links to /compare still work.
 export default function ComparePage() {
-  return <Compare />;
+  redirect("/");
 }

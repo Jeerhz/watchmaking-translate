@@ -4,12 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const LINKS = [
-  { href: "/", label: "Translator" },
-  { href: "/compare", label: "Compare" },
+  { href: "/", label: "Compare" },
+  { href: "/translator", label: "Translator" },
   { href: "/scoreboard", label: "Scoreboard" },
-  { href: "/architecture", label: "Architecture" },
-  { href: "/roadmap", label: "Roadmap" },
 ];
+// /architecture and /roadmap document how the system was built; they stay reachable by address.
 
 export default function Nav() {
   const path = usePathname();

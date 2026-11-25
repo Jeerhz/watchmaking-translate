@@ -11,6 +11,8 @@ export const LANGS: Lang[] = ["en", "de", "fr"];
 export const LANG_NAME: Record<Lang, string> = { en: "English", de: "German", fr: "French" };
 /** Each language's own name, for column headings. */
 export const LANG_TITLE: Record<Lang, string> = { en: "English", de: "Deutsch", fr: "Français" };
+/** The name shown for a language: GMT prints Swiss German, and says so. */
+export const langLabel = (lang: Lang, swiss = true): string => (lang === "de" && swiss ? "Swiss German" : LANG_NAME[lang]);
 export const isSrc = (x: unknown): x is Src => x === "fr" || x === "en";
 /** One value per target language. */
 export const perLang = <T,>(make: (lang: Lang) => T): Record<Lang, T> => ({ en: make("en"), de: make("de"), fr: make("fr") });
