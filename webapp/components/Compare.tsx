@@ -58,7 +58,7 @@ export default function Compare() {
   const [samples, setSamples] = useState<Sample[]>([]);
   const [sample, setSample] = useState<Sample | null>(null);
   const [langs, setLangs] = useState<Record<Lang, boolean>>(perLang(() => true));
-  const [chosen, setChosen] = useState<Record<string, boolean>>({ claude: true, "deepl-claude": true, deepl: true, gmt: true });
+  const [chosen, setChosen] = useState<Record<string, boolean>>({ claude: true, "deepl-claude": true, gmt: true });
   const [effort, setEffort] = useState<Effort>("xhigh");
   const [swiss, setSwiss] = useState(true);
   const [blind, setBlind] = useState(true);
