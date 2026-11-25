@@ -129,11 +129,7 @@ export default function LangColumn(props: {
           {run.status === "running" ? run.liveLabel + "…" : done && run.trace ? `${SYSTEM_LABEL[run.system]} · ${Math.round(run.trace.ms / 1000)} s` : ""}
         </span>
       </div>
-      <Stepper steps={run.steps} />
       {run.error && <div className="notice err">{run.error}</div>}
-      {run.status === "running" && run.thinking && <div className="thinking">{run.thinking.slice(-600)}</div>}
-
-      {done && run.trace && <StageTrace trace={run.trace} humanShare={humanShare} />}
 
       {done &&
         (run.approved ? (
@@ -168,7 +164,26 @@ export default function LangColumn(props: {
         ))}
 
       {done && (
-        <>
+        <p className="small" style={{ margin: 0 }}>
+          {run.trace && run.trace.calls > 1 ? `${applied.length} correction${applied.length === 1 ? "" : "s"} by the editor` : "No editing step"}
+          {" · "}
+          {qa.errors + qa.warnings ? (
+            <b>
+              {qa.errors + qa.warnings} automatic check{qa.errors + qa.warnings === 1 ? "" : "s"} to look at
+            </b>
+          ) : (
+            "all automatic checks passed"
+          )}
+          {touched ? " (on your edited text)" : ""}
+        </p>
+      )}
+      {done && qa.errors + qa.warnings > 0 && <QAList checks={qaNow} showOk={false} />}
+
+      {done && (
+        <details className="more">
+          <summary>Details: what each step did, corrections, checks</summary>
+          <Stepper steps={run.steps} />
+          {run.trace && <StageTrace trace={run.trace} humanShare={humanShare} />}
           <div className="tabs" role="tablist">
             <button role="tab" aria-selected={tab === "changes"} onClick={() => setTab("changes")}>
               Changes<span className="count">{applied.length}</span>
@@ -239,11 +254,7 @@ export default function LangColumn(props: {
               )}
             </>
           )}
-        </>
-      )}
-
-      {(done || run.prompts.length > 0) && (
-        <details className="inspect">
+          <details className="inspect">
           <summary>Inspect: draft, reasoning, prompts, cost</summary>
           {done && (
             <>
@@ -284,6 +295,7 @@ export default function LangColumn(props: {
               {run.deeplChars ? ` · DeepL ${run.deeplChars.toLocaleString("en")} characters (≈ €${((run.deeplChars * 22) / 1e6).toFixed(3)})` : ""}.
             </p>
           )}
+          </details>
         </details>
       )}
     </section>

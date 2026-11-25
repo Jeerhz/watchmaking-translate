@@ -37,11 +37,11 @@ const SAMPLES: Record<Src, Record<string, string>> = { fr: SAMPLES_FR, en: SAMPL
 const DRAFT_KEY: Record<Src, string> = { fr: "gmt-desk-draft", en: "gmt-desk-draft-en" };
 const SRC_KEY = "gmt-desk-source";
 
-/** Two ways to run: fast and cheap for a first read, or thorough for the text that will be printed. */
+/** How hard Claude thinks: fast for a first read, or thorough for the text that will be printed. */
 type Preset = "quick" | "publication";
 const PRESETS: Record<Preset, { label: string; effort: Effort; help: string }> = {
-  quick: { label: "Quick draft", effort: "high", help: "DeepL drafts, Claude’s editor corrects it — about 20 s for 250 words" },
-  publication: { label: "Publication", effort: "xhigh", help: "Claude drafts with more thinking, then the editor — slower, for copy that will be printed" },
+  quick: { label: "Quick draft", effort: "high", help: "Less thinking by the editor: faster, for a first read" },
+  publication: { label: "Publication", effort: "xhigh", help: "More thinking by the editor: slower, for copy that will be printed" },
 };
 const EDITED: SystemId[] = ["claude", "deepl-claude", "fusion", "claude-legacy"];
 
@@ -53,13 +53,15 @@ export default function Desk() {
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [analysing, setAnalysing] = useState(false);
   const [preset, setPreset] = useState<Preset>("publication");
-  const [system, setSystem] = useState<SystemId>("claude");
+  const [system, setSystem] = useState<SystemId>("deepl-claude"); // DeepL drafts, Claude edits; Claude alone when DeepL is not set up
   const [swiss, setSwiss] = useState(true); // GMT prints Swiss German
   const [runs, setRuns] = useState<Record<Lang, LangRun>>(perLang(() => emptyRun()));
   const [editing, setEditing] = useState<Record<Lang, boolean>>(perLang(() => false));
   const [have, setHave] = useState<{ deepl: boolean; open: boolean }>({ deepl: false, open: false });
   const [ran, setRan] = useState<{ text: string; src: Src; analysis: Analysis; dropped: Dropped[]; effort: Effort } | null>(null);
   const [pruning, setPruning] = useState(false);
+  const [showParams, setShowParams] = useState(false);
+  const [showEvidence, setShowEvidence] = useState(false);
   const [stats, setStats] = useState<{ terms: number; sentences: Record<string, number> } | null>(null);
   const ctl = useRef<AbortController | null>(null);
   const langs = TARGETS[ran?.src ?? src]; // the languages on screen are those of the last run
@@ -77,7 +79,10 @@ export default function Desk() {
     const json = (r: Response) => (r.ok ? r.json() : null);
     fetch("/api/analyze").then(json).then(setStats).catch(() => undefined);
     Promise.all([fetch("/api/deepl").then(json), fetch("/api/open-mt").then(json)])
-      .then(([d, o]) => setHave({ deepl: Boolean(d?.configured), open: Boolean(o?.configured) }))
+      .then(([d, o]) => {
+        setHave({ deepl: Boolean(d?.configured), open: Boolean(o?.configured) });
+        if (!d?.configured) setSystem("claude");
+      })
       .catch(() => undefined);
   }, []);
 
@@ -116,12 +121,11 @@ export default function Desk() {
     setAnalysis(null);
     setSrc(next);
     setText(saved?.trim() ? saved : SAMPLES[next]["Novelty review"]);
-    if (!worksFrom(system, next)) setSystem("claude");
+    if (!worksFrom(system, next)) setSystem(have.deepl ? "deepl-claude" : "claude");
   }
 
   function choosePreset(p: Preset) {
     setPreset(p);
-    setSystem(p === "quick" && have.deepl ? "deepl-claude" : "claude");
   }
 
   const patchFor = (lang: Lang) => (fn: (r: LangRun) => LangRun) => setRuns((all) => ({ ...all, [lang]: fn(all[lang]) }));
@@ -215,92 +219,141 @@ export default function Desk() {
   const keptTerms = (ran?.analysis.terms ?? []).filter((h) => !gone.has(h.key));
   const usable = SYSTEMS.filter((s) => s.id !== "claude-legacy" && (!s.needs || have[s.needs]) && worksFrom(s.id, src));
   const [first, second] = TARGETS[src];
+  // what is happening now, in words
+  const progress = pruning
+    ? "Reading the text: checking which of GMT’s terms apply…"
+    : langs
+        .map((l) => `${langLabel(l, swiss)}: ${runs[l].status === "running" ? runs[l].liveLabel || "starting" : runs[l].status === "done" ? "ready" : runs[l].status === "idle" ? "waiting" : "stopped"}`)
+        .join(" · ");
   const memSize = stats ? Object.values(stats.sentences).reduce((x, y) => x + y, 0) : 0;
 
   return (
     <main className="page">
-      <h1 className="page-title">
-        {LANG_NAME[src]} → {langLabel(first, swiss)} &amp; {langLabel(second, swiss)}
-      </h1>
+      <h1 className="page-title">Translate</h1>
 
-      <div className="desk-top">
-        <section className="panel" aria-labelledby="srcLabel">
-          <div className="panel-head">
-            <div className="row" style={{ gap: 10 }}>
-              <div className="seg" role="group" aria-label="Source language">
-                {SOURCES.map((l) => (
-                  <button key={l} type="button" aria-pressed={src === l} onClick={() => chooseSource(l)} disabled={running} title={`Translate from ${LANG_NAME[l]} into ${TARGETS[l].map((t) => LANG_NAME[t]).join(" and ")}`}>
-                    {LANG_NAME[l]}
+      <section className="panel workbench" aria-labelledby="srcLabel">
+        <div className="panel-head">
+          <div className="row" style={{ gap: 10 }}>
+            <span className="label" id="srcLabel">
+              Translate from
+            </span>
+            <div className="seg" role="group" aria-label="Source language">
+              {SOURCES.map((l) => (
+                <button key={l} type="button" aria-pressed={src === l} onClick={() => chooseSource(l)} disabled={running}>
+                  {LANG_NAME[l]}
+                </button>
+              ))}
+            </div>
+            <span className="muted small">
+              into {langLabel(first, swiss)} and {langLabel(second, swiss)}
+            </span>
+          </div>
+          <span className="muted small">{analysis ? `${analysis.words} words` : ""}</span>
+        </div>
+        <textarea className="source" lang={src} spellCheck={false} value={text} onChange={(e) => setText(e.target.value)} placeholder={`Paste ${LANG_NAME[src]} text here.`} aria-label={`${LANG_NAME[src]} source text`} />
+        <div className="row">
+          <button className="btn" onClick={translate} disabled={running || !text.trim()}>
+            {running ? "Translating…" : "Translate"}
+          </button>
+          {running && (
+            <button className="btn ghost" onClick={() => ctl.current?.abort()}>
+              Stop
+            </button>
+          )}
+          <span style={{ flex: 1 }} />
+          <button className="btn ghost small quiet disclosure" type="button" aria-expanded={showEvidence} aria-controls="evidence" onClick={() => setShowEvidence((v) => !v)}>
+            <span aria-hidden className="arrow">
+              ▸
+            </span>{" "}
+            Terms and references{analysis ? ` (${analysis.terms.length})` : ""}
+          </button>
+          <button className="btn ghost small quiet disclosure" type="button" aria-expanded={showParams} aria-controls="params" onClick={() => setShowParams((v) => !v)}>
+            <span aria-hidden className="arrow">
+              ▸
+            </span>{" "}
+            Parameters
+          </button>
+        </div>
+        {running && (
+          <div className="progress" role="status" aria-live="polite">
+            <div className="progress-bar" aria-hidden>
+              <span />
+            </div>
+            <span>{progress}</span>
+          </div>
+        )}
+        {showParams && (
+          <div id="params" className="params">
+            <div className="row" style={{ gap: "6px 16px" }}>
+              <span className="label" style={{ minWidth: 190 }}>
+                Quality
+              </span>
+              <div className="seg" role="group" aria-label="Quality">
+                {(Object.keys(PRESETS) as Preset[]).map((p) => (
+                  <button key={p} type="button" aria-pressed={preset === p} title={PRESETS[p].help} onClick={() => choosePreset(p)} disabled={running}>
+                    {PRESETS[p].label}
                   </button>
                 ))}
               </div>
-              <span className="label" id="srcLabel">
-                source{analysis ? ` · ${analysis.words} words` : ""}
+              <span className="muted small">{PRESETS[preset].help}</span>
+            </div>
+            <div className="row" style={{ gap: "6px 16px" }}>
+              <span className="label" style={{ minWidth: 190 }}>
+                System
               </span>
-            </div>
-            <div className="row" style={{ gap: 6 }}>
-              {Object.keys(SAMPLES[src]).map((k) => (
-                <button key={k} className="btn ghost small" type="button" onClick={() => setText(SAMPLES[src][k])} disabled={running}>
-                  {k}
-                </button>
-              ))}
-            </div>
-          </div>
-          <textarea className="source" lang={src} spellCheck={false} value={text} onChange={(e) => setText(e.target.value)} aria-label={`${LANG_NAME[src]} source text`} />
-          <div className="row">
-            <div className="seg" role="group" aria-label="Quality">
-              {(Object.keys(PRESETS) as Preset[]).map((p) => (
-                <button key={p} type="button" aria-pressed={preset === p} title={PRESETS[p].help} onClick={() => choosePreset(p)} disabled={running}>
-                  {PRESETS[p].label}
-                </button>
-              ))}
-            </div>
-            <label className="check">
-              System
-              <select value={system} onChange={(e) => setSystem(e.target.value as SystemId)} disabled={running}>
+              <select value={system} onChange={(e) => setSystem(e.target.value as SystemId)} disabled={running} aria-label="System">
                 {usable.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.label}
                   </option>
                 ))}
               </select>
-            </label>
-            <label className="check">
-              <input type="checkbox" checked={swiss} onChange={(e) => setSwiss(e.target.checked)} disabled={running} /> Swiss German (ss, «»)
-            </label>
-          </div>
-          <p className="muted small" style={{ margin: 0 }}>
-            {SYSTEMS.find((s) => s.id === system)?.help}.
-            {src === "en" && " From English, the termbase is read from its English side and DeepL runs without the GMT glossary; this direction has not been measured yet."}
-          </p>
-          <div className="row">
-            <button className="btn" onClick={translate} disabled={running || !text.trim()}>
-              Translate
-            </button>
-            {running && (
-              <button className="btn ghost" onClick={() => ctl.current?.abort()}>
-                Stop
+              <label className="check">
+                <input type="checkbox" checked={swiss} onChange={(e) => setSwiss(e.target.checked)} disabled={running} /> Swiss spelling for German (ss, «»)
+              </label>
+            </div>
+            <p className="muted small" style={{ margin: 0 }}>
+              {SYSTEMS.find((s) => s.id === system)?.help}.
+              {src === "en" && " From English, the termbase is read from its English side and DeepL runs without the GMT glossary; this direction has not been measured yet."}
+            </p>
+            <div className="row" style={{ gap: "6px 16px" }}>
+              <span className="label" style={{ minWidth: 190 }}>
+                Example texts
+              </span>
+              {Object.keys(SAMPLES[src]).map((k) => (
+                <button key={k} className="btn ghost small" type="button" onClick={() => setText(SAMPLES[src][k])} disabled={running}>
+                  {k}
+                </button>
+              ))}
+            </div>
+            <div className="row" style={{ gap: "6px 16px" }}>
+              <span className="label" style={{ minWidth: 190 }}>
+                More
+              </span>
+              <button className="btn ghost small" onClick={toCompare} disabled={running || !text.trim()} title="Run several systems on this text and judge them blind">
+                Compare systems on this text →
               </button>
-            )}
-            <span style={{ flex: 1 }} />
-            <button className="btn ghost small" onClick={toCompare} disabled={running || !text.trim()} title="Run several systems on this text and judge them blind">
-              Compare systems on this text →
-            </button>
-            {anyDone && !running && (
-              <button className="btn ghost small" onClick={download}>
-                Download record
-              </button>
-            )}
+              {anyDone && !running && (
+                <button className="btn ghost small" onClick={download}>
+                  Download the full record
+                </button>
+              )}
+            </div>
           </div>
-        </section>
-        <AnalysisPanel
-          text={text}
-          analysis={analysis}
-          loading={analysing || pruning}
-          dropped={ran && ran.text === text.trim() && ran.src === src ? ran.dropped : []}
-          stats={stats ? `${stats.terms.toLocaleString()} termbase keys · ${memSize.toLocaleString()} reference sentences` : ""}
-        />
-      </div>
+        )}
+      </section>
+
+      {showEvidence && (
+        <div id="evidence">
+          <AnalysisPanel
+            text={text}
+            analysis={analysis}
+            loading={analysing || pruning}
+            dropped={ran && ran.text === text.trim() && ran.src === src ? ran.dropped : []}
+            stats={stats ? `${stats.terms.toLocaleString()} termbase keys · ${memSize.toLocaleString()} reference sentences` : ""}
+          />
+        </div>
+      )}
 
       {started && ran && (
         <>

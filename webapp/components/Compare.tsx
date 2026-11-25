@@ -59,7 +59,7 @@ export default function Compare() {
   const [sample, setSample] = useState<Sample | null>(null);
   const [langs, setLangs] = useState<Record<Lang, boolean>>(perLang(() => true));
   const [chosen, setChosen] = useState<Record<string, boolean>>({ claude: true, "deepl-claude": true, deepl: true, gmt: true });
-  const [effort, setEffort] = useState<Effort>("high");
+  const [effort, setEffort] = useState<Effort>("xhigh");
   const [swiss, setSwiss] = useState(true);
   const [blind, setBlind] = useState(true);
   const [rater, setRater] = useState("");
@@ -81,9 +81,11 @@ export default function Compare() {
     // scripted evaluations drive the same pipeline code from the browser console
     (window as unknown as { gmtDesk?: object }).gmtDesk = { runLanguage, emptyRun, pruneTerms };
     setRater(rememberedName());
+    let arrived = false;
     try {
       const sent = localStorage.getItem("gmt-compare-text");
       if (sent?.trim()) {
+        arrived = true;
         setText(sent);
         if (localStorage.getItem("gmt-compare-source") === "en") setSrc("en");
       }
@@ -91,9 +93,17 @@ export default function Compare() {
       localStorage.removeItem("gmt-compare-source");
     } catch {}
     const json = (r: Response) => (r.ok ? r.json() : null);
+    // open on a random GMT Magazine passage, unless a text was sent over from the Translator
     fetch("/api/samples")
       .then((r) => (r.ok ? r.json() : []))
-      .then(setSamples)
+      .then((list: Sample[]) => {
+        setSamples(list);
+        if (!arrived && list.length) {
+          const s = list[Math.floor(Math.random() * list.length)];
+          setSample(s);
+          setText((t) => (t.trim() ? t : s.fr));
+        }
+      })
       .catch(() => undefined);
     Promise.all([fetch("/api/deepl").then(json), fetch("/api/open-mt").then(json)])
       .then(([d, o]) => setHave({ deepl: Boolean(d?.configured), open: Boolean(o?.configured) }))
